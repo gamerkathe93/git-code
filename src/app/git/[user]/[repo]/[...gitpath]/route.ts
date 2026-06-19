@@ -1,14 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { spawn } from "child_process";
 import path from "path";
 import { db } from "@/lib/db";
 import { compare } from "bcryptjs";
 
+export const dynamic = "force-dynamic";
+export const maxDuration = 300; // 5 min for large pushes
+
 const REPO_BASE = process.env.REPO_STORAGE_PATH ?? path.join(process.env.HOME ?? "~", ".gitcode", "repos");
 
 type Params = { params: Promise<{ user: string; repo: string; gitpath: string[] }> };
 
-// Authenticate via HTTP Basic auth (used by git clients)
 async function authenticate(req: NextRequest): Promise<{ userId: string; username: string } | null> {
   const authHeader = req.headers.get("authorization");
   if (!authHeader?.startsWith("Basic ")) return null;
@@ -36,93 +38,129 @@ function requireAuth(): Response {
   });
 }
 
-async function runGitBackend(req: NextRequest, repoPath: string, gitpath: string[], remoteUser: string | null = null): Promise<Response> {
+async function runGitBackend(
+  req: NextRequest,
+  gitpath: string[],
+  remoteUser: string | null
+): Promise<Response> {
   const service = req.nextUrl.searchParams.get("service") ?? "";
   const pathStr = gitpath.join("/");
 
-  // Build CGI environment for git-http-backend
-  const env: Record<string, string> = {
-    ...Object.fromEntries(
-      Object.entries(process.env).filter(([, v]) => v !== undefined) as [string, string][]
-    ),
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
     GIT_PROJECT_ROOT: REPO_BASE,
     GIT_HTTP_EXPORT_ALL: "1",
+    GIT_HTTP_MAX_REQUEST_BUFFER: "500m",
     PATH_INFO: `/${pathStr}`,
     REQUEST_METHOD: req.method,
     CONTENT_TYPE: req.headers.get("content-type") ?? "",
-    QUERY_STRING: service ? `service=${service}` : req.nextUrl.search.slice(1),
+    CONTENT_LENGTH: req.headers.get("content-length") ?? "0",
+    QUERY_STRING: service ? `service=${service}` : (req.nextUrl.search.slice(1) || ""),
     REMOTE_ADDR: "127.0.0.1",
-    // REMOTE_USER must be set for git-http-backend to allow push (receive-pack)
     ...(remoteUser ? { REMOTE_USER: remoteUser } : {}),
   };
 
-  const body = req.method === "POST" ? await req.arrayBuffer() : null;
-
   return new Promise((resolve) => {
-    const proc = spawn("git", ["http-backend"], { env: env as NodeJS.ProcessEnv });
+    const proc = spawn("git", ["http-backend"], { env });
 
-    // Write request body to stdin
-    if (body && body.byteLength > 0) {
-      const buf = Buffer.from(body);
-      env.CONTENT_LENGTH = String(buf.byteLength);
-      proc.stdin.write(buf);
+    // Stream request body → git stdin (avoids buffering 100MB+ pushes)
+    if (req.body && req.method === "POST") {
+      const reader = req.body.getReader();
+      const pump = async () => {
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            proc.stdin.write(Buffer.from(value));
+          }
+        } catch (e) {
+          console.error("stdin pump error:", e);
+        } finally {
+          proc.stdin.end();
+        }
+      };
+      pump();
+    } else {
+      proc.stdin.end();
     }
-    proc.stdin.end();
 
-    const chunks: Buffer[] = [];
-    proc.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+    // Buffer stdout to parse CGI headers, then stream the rest
+    const headerChunks: Buffer[] = [];
+    let headersParsed = false;
+    let responseStatus = 200;
+    const responseHeaders = new Headers();
+    const bodyChunks: Buffer[] = [];
 
-    proc.stdout.on("end", () => {
-      const output = Buffer.concat(chunks);
-
-      // Parse CGI response: headers then blank line then body
-      const headerEnd = output.indexOf("\r\n\r\n");
-      const headerEndAlt = output.indexOf("\n\n");
-      const splitAt = headerEnd !== -1 ? headerEnd : headerEndAlt;
-
-      if (splitAt === -1) {
-        resolve(new Response("Bad gateway", { status: 502 }));
+    proc.stdout.on("data", (chunk: Buffer) => {
+      if (headersParsed) {
+        bodyChunks.push(chunk);
         return;
       }
 
-      const headerStr = output.slice(0, splitAt).toString("utf-8");
-      const bodyStart = splitAt + (headerEnd !== -1 ? 4 : 2);
-      const responseBody = output.slice(bodyStart);
+      headerChunks.push(chunk);
+      const combined = Buffer.concat(headerChunks);
+      const headerEnd = findHeaderEnd(combined);
 
-      const headers = new Headers();
-      let status = 200;
+      if (headerEnd !== -1) {
+        headersParsed = true;
+        const headerStr = combined.slice(0, headerEnd).toString("utf-8");
+        const bodyStart = headerEnd + (combined.slice(headerEnd, headerEnd + 2).toString() === "\r\n" ? 2 : 0);
+        const remaining = combined.slice(bodyStart);
+        if (remaining.length > 0) bodyChunks.push(remaining);
 
-      for (const line of headerStr.split(/\r?\n/)) {
-        if (!line.trim()) continue;
-        const colonIdx = line.indexOf(":");
-        if (colonIdx === -1) continue;
-        const key = line.slice(0, colonIdx).trim().toLowerCase();
-        const val = line.slice(colonIdx + 1).trim();
-        if (key === "status") {
-          status = parseInt(val.split(" ")[0], 10) || 200;
-        } else {
-          headers.set(key, val);
+        for (const line of headerStr.split(/\r?\n/)) {
+          if (!line.trim()) continue;
+          const colonIdx = line.indexOf(":");
+          if (colonIdx === -1) continue;
+          const key = line.slice(0, colonIdx).trim().toLowerCase();
+          const val = line.slice(colonIdx + 1).trim();
+          if (key === "status") {
+            responseStatus = parseInt(val.split(" ")[0], 10) || 200;
+          } else {
+            responseHeaders.set(key, val);
+          }
         }
       }
+    });
 
-      resolve(new Response(responseBody, { status, headers }));
+    proc.stderr.on("data", (chunk: Buffer) => {
+      console.error("git http-backend stderr:", chunk.toString());
+    });
+
+    proc.stdout.on("end", () => {
+      const body = Buffer.concat(bodyChunks);
+      resolve(new Response(body, { status: responseStatus, headers: responseHeaders }));
     });
 
     proc.on("error", (err) => {
-      console.error("git http-backend error:", err);
-      resolve(new Response("git http-backend not available", { status: 500 }));
+      console.error("git http-backend spawn error:", err);
+      resolve(new Response("git not available on this server", { status: 500 }));
+    });
+
+    proc.on("close", (code) => {
+      if (code !== 0 && bodyChunks.length === 0) {
+        resolve(new Response(`git exited with code ${code}`, { status: 500 }));
+      }
     });
   });
+}
+
+// Find end of CGI headers (\r\n\r\n or \n\n)
+function findHeaderEnd(buf: Buffer): number {
+  for (let i = 0; i < buf.length - 1; i++) {
+    if (buf[i] === 0x0a && buf[i + 1] === 0x0a) return i + 2;
+    if (i + 3 < buf.length &&
+      buf[i] === 0x0d && buf[i + 1] === 0x0a &&
+      buf[i + 2] === 0x0d && buf[i + 3] === 0x0a) return i + 4;
+  }
+  return -1;
 }
 
 async function handle(req: NextRequest, { params }: Params) {
   const { user, repo: repoName, gitpath } = await params;
 
-  // Strip .git suffix if present
   const cleanRepo = repoName.replace(/\.git$/, "");
-  const repoPath = path.join(REPO_BASE, user, `${cleanRepo}.git`);
 
-  // Look up repo in DB
   const ownerUser = await db.user.findUnique({ where: { username: user } });
   if (!ownerUser) return new Response("Not found", { status: 404 });
 
@@ -142,18 +180,16 @@ async function handle(req: NextRequest, { params }: Params) {
     const session = await authenticate(req);
     if (!session) return requireAuth();
 
-    // Write operations: must be the repo owner
     if (!isReadOperation && session.username !== user) {
       return new Response("Forbidden", { status: 403 });
     }
     authenticatedUser = session.username;
   }
 
-  return runGitBackend(req, repoPath, [user, `${cleanRepo}.git`, ...gitpath], authenticatedUser);
+  // Pass full path: /user/repo.git/info/refs etc.
+  const fullGitPath = [user, `${cleanRepo}.git`, ...gitpath];
+  return runGitBackend(req, fullGitPath, authenticatedUser);
 }
 
 export const GET = handle;
 export const POST = handle;
-
-// Disable body parsing — git sends raw binary
-export const dynamic = "force-dynamic";
