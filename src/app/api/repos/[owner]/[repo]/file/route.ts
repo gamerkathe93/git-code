@@ -24,6 +24,8 @@ export async function GET(req: NextRequest, { params }: Params) {
   });
   if (!repo) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  if (repo.isPrivate && session.username !== owner) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
   const content = await getFileContent(owner, repoName, path, ref);
   if (content === null) return NextResponse.json({ error: "File not found" }, { status: 404 });
 

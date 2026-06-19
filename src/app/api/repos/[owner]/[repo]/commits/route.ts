@@ -22,6 +22,8 @@ export async function GET(req: NextRequest, { params }: Params) {
   });
   if (!repo) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  if (repo.isPrivate && session.username !== owner) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
   const commits = await getCommits(owner, repoName, branch, limit);
   return NextResponse.json({ commits });
 }

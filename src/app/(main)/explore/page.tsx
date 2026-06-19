@@ -21,10 +21,10 @@ export default async function ExplorePage({ searchParams }: { searchParams: Sear
   const { topic, sort = "Trending", q } = await searchParams;
 
   const orderBy: Record<Sort, object> = {
-    "Trending":         { stars: { _count: "desc" } },
-    "Most Starred":     { stars: { _count: "desc" } },
+    "Trending":         { starsCount: "desc" },
+    "Most Starred":     { starsCount: "desc" },
     "Recently Updated": { updatedAt: "desc" },
-    "Most Forked":      { updatedAt: "desc" },
+    "Most Forked":      { forksCount: "desc" },
   };
 
   const where: Record<string, unknown> = { isPrivate: false };
@@ -33,8 +33,8 @@ export default async function ExplorePage({ searchParams }: { searchParams: Sear
   }
   if (q) {
     where.OR = [
-      { name: { contains: q, mode: "insensitive" } },
-      { description: { contains: q, mode: "insensitive" } },
+      { name: { contains: q } },
+      { description: { contains: q } },
     ];
   }
 

@@ -79,7 +79,7 @@ model Issue {
   repoId   String
   repo     Repository @relation(fields: [repoId], references: [id], onDelete: Cascade)
   authorId String
-  author   User       @relation("IssueAuthor", fields: [authorId], references: [id])
+  author   User       @relation("IssueAuthor", fields: [authorId], references: [id], onDelete: Cascade)
 
   milestoneId String?
   milestone   Milestone? @relation(fields: [milestoneId], references: [id])
@@ -126,7 +126,7 @@ model PullRequest {
   repoId   String
   repo     Repository @relation(fields: [repoId], references: [id], onDelete: Cascade)
   authorId String
-  author   User       @relation("PRAuthor", fields: [authorId], references: [id])
+  author   User       @relation("PRAuthor", fields: [authorId], references: [id], onDelete: Cascade)
 
   comments Comment[]
 
@@ -169,7 +169,7 @@ model Comment {
   updatedAt DateTime @updatedAt
 
   authorId String
-  author   User   @relation(fields: [authorId], references: [id])
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
   issueId       String?
   issue         Issue?       @relation(fields: [issueId], references: [id], onDelete: Cascade)
@@ -215,7 +215,7 @@ model Pipeline {
   repoId    String
   repo      Repository @relation(fields: [repoId], references: [id], onDelete: Cascade)
   triggerId String?
-  trigger   User?      @relation(fields: [triggerId], references: [id])
+  trigger   User?      @relation(fields: [triggerId], references: [id], onDelete: SetNull)
 
   jobs PipelineJob[]
 }

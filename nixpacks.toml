@@ -2,7 +2,7 @@
 nixPkgs = ["nodejs_20", "git", "bash"]
 
 [phases.build]
-cmds = ["npm install", "npm run build"]
+cmds = ["npm install", "npx prisma generate", "npm run build"]
 
 [start]
 cmd = "sh start.sh"

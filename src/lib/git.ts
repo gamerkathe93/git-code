@@ -65,7 +65,7 @@ export async function initWithReadme(
     if (statusResult.files.length > 0) {
       await wgit.add(".");
       await wgit.commit("Initial commit");
-      await wgit.push("origin", defaultBranch);
+      await wgit.raw(["push", "--set-upstream", "origin", defaultBranch]);
     }
   } catch (e) {
     console.error("initWithReadme error:", e);
@@ -104,7 +104,7 @@ export async function getBranches(username: string, repoName: string) {
     const git: SimpleGit = simpleGit(repoPath);
     const result = await git.branch(["-a"]);
     return Object.keys(result.branches)
-      .filter((b) => !b.startsWith("remotes/"))
+      .filter((b) => !b.startsWith("remotes/") && b !== "HEAD")
       .map((b) => result.branches[b]);
   } catch {
     return [];
@@ -174,8 +174,11 @@ export async function getFileContent(
   const repoPath = getRepoPath(username, repoName);
   if (!existsSync(repoPath)) return null;
   try {
+    // Sanitize inputs to prevent path traversal and shell injection
+    const safeFilePath = filePath.replace(/\.\.\/|\.\.$/g, "");
+    const safeRef = /^[a-zA-Z0-9.\/\-_]+$/.test(ref) ? ref : "HEAD";
     const git: SimpleGit = simpleGit(repoPath);
-    const content = await git.raw(["show", `${ref}:${filePath}`]);
+    const content = await git.raw(["show", `${safeRef}:${safeFilePath}`]);
     return content;
   } catch {
     return null;

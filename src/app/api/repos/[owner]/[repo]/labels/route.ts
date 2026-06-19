@@ -27,6 +27,8 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { owner, repo: repoName } = await params;
+  if (session.username !== owner) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
   const repo = await getRepo(owner, repoName);
   if (!repo) return NextResponse.json({ error: "Not found" }, { status: 404 });
 

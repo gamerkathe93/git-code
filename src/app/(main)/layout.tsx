@@ -10,13 +10,11 @@ export default async function MainLayout({ children }: { children: React.ReactNo
 
   const user = await db.user.findUnique({
     where: { id: session.userId },
-    include: { _count: { select: { notifications: true } } },
+    include: { _count: { select: { notifications: { where: { isRead: false } } } } },
   });
   if (!user) redirect("/login");
 
-  const unreadCount = await db.notification.count({
-    where: { userId: user.id, isRead: false },
-  });
+  const unreadCount = user._count.notifications;
 
   const repos = await db.repository.findMany({
     where: { ownerId: user.id },

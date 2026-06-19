@@ -22,6 +22,8 @@ export async function GET(req: NextRequest, { params }: Params) {
   });
   if (!repo) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  if (repo.isPrivate && session.username !== owner) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
   const tree = await getTree(owner, repoName, ref, path);
   return NextResponse.json({ tree, ref, path });
 }

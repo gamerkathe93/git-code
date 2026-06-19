@@ -95,7 +95,9 @@ export default async function RepoCodePage({ params }: Params) {
                         ? <Folder size={16} color="#58a6ff" />
                         : <FileText size={16} color="var(--text-muted)" />}
                       <Link
-                        href={`/${username}/${repoName}/blob/${repo.defaultBranch}/${entry.path}`}
+                        href={entry.type === "tree"
+                          ? `/${username}/${repoName}/tree/${repo.defaultBranch}/${entry.path}`
+                          : `/${username}/${repoName}/blob/${repo.defaultBranch}/${entry.path}`}
                         style={{ flex: 1, fontSize: 13, fontWeight: entry.type === "tree" ? 600 : 400 }}
                       >
                         {entry.name}

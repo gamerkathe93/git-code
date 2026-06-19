@@ -1,6 +1,9 @@
 #!/bin/sh
 set -e
 
+export DATABASE_URL=${DATABASE_URL:-"file:/data/db/gitcode.db"}
+export REPO_STORAGE_PATH=${REPO_STORAGE_PATH:-"/data/repos"}
+
 # Create data directories on the mounted volume
 mkdir -p /data/db
 mkdir -p /data/repos

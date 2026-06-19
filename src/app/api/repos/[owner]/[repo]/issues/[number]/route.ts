@@ -49,6 +49,8 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const result = await getRepoAndIssue(owner, repo, number);
   if (!result) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  if (session.userId !== result.issue.authorId && session.username !== owner) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
   const body = await req.json();
   const { title, state, milestoneId, labelIds } = body;
 

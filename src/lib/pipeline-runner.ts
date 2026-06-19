@@ -99,7 +99,7 @@ export async function runPipeline(pipelineId: string, username: string, repoName
 
   try {
   if (existsSync(repoPath)) {
-    mkdirSync(workDir, { recursive: true });
+    mkdirSync(path.dirname(workDir), { recursive: true });
     cleanupWorkDir = true;
     // git clone from the bare repo into workDir
     await new Promise<void>((resolve, reject) => {

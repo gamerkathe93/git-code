@@ -19,6 +19,8 @@ export async function GET(req: NextRequest, { params }: Params) {
   });
   if (!repo) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  if (repo.isPrivate && session.username !== owner) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
   const branches = await getBranches(owner, repoName);
   return NextResponse.json({ branches, defaultBranch: repo.defaultBranch });
 }
