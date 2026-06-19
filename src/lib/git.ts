@@ -196,7 +196,7 @@ export async function hasAnyCommit(username: string, repoName: string): Promise<
 
 export function getCloneUrls(username: string, repoName: string, baseUrl = "http://localhost:3000") {
   return {
-    http: `${baseUrl}/${username}/${repoName}.git`,
-    ssh: `git@localhost:${username}/${repoName}.git`,
+    http: `${baseUrl}/git/${username}/${repoName}.git`,
+    ssh: `git@${new URL(baseUrl).hostname}:${username}/${repoName}.git`,
   };
 }

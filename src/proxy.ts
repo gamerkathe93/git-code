@@ -10,11 +10,12 @@ const PUBLIC_PATHS = ["/login", "/register", "/api/auth/login", "/api/auth/regis
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Allow public paths and static files
+  // Allow public paths, static files, and git HTTP backend
   if (
     PUBLIC_PATHS.some((p) => pathname.startsWith(p)) ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
+    pathname.startsWith("/git/") ||   // git push/clone — auth handled in route
     pathname.match(/\.(ico|png|jpg|jpeg|svg|gif|css|js|woff2?|ttf|map)$/)
   ) {
     return NextResponse.next();
