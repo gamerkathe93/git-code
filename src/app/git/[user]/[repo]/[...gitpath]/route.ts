@@ -58,7 +58,7 @@ async function runGitBackend(req: NextRequest, repoPath: string, gitpath: string
   const body = req.method === "POST" ? await req.arrayBuffer() : null;
 
   return new Promise((resolve) => {
-    const proc = spawn("git", ["http-backend"], { env });
+    const proc = spawn("git", ["http-backend"], { env: env as NodeJS.ProcessEnv });
 
     // Write request body to stdin
     if (body && body.byteLength > 0) {

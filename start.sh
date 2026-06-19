@@ -11,4 +11,4 @@ npx prisma migrate deploy
 
 # Start the app
 echo "Starting GitCode..."
-exec node node_modules/.bin/next start -p ${PORT:-3000}
+exec npx next start --port ${PORT:-3000} --hostname 0.0.0.0
