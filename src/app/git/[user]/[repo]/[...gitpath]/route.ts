@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { spawn } from "child_process";
+import { Readable } from "stream";
 import path from "path";
 import { db } from "@/lib/db";
 import { compare } from "bcryptjs";
@@ -7,27 +8,25 @@ import { compare } from "bcryptjs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const REPO_BASE = process.env.REPO_STORAGE_PATH ?? path.join(process.env.HOME ?? "~", ".gitcode", "repos");
+const REPO_BASE =
+  process.env.REPO_STORAGE_PATH ?? path.join(process.env.HOME ?? "~", ".gitcode", "repos");
 
 type Params = { params: Promise<{ user: string; repo: string; gitpath: string[] }> };
 
-async function authenticate(req: NextRequest): Promise<{ userId: string; username: string } | null> {
+async function authenticate(
+  req: NextRequest
+): Promise<{ userId: string; username: string } | null> {
   const authHeader = req.headers.get("authorization");
   if (!authHeader?.startsWith("Basic ")) return null;
-
   const decoded = Buffer.from(authHeader.slice(6), "base64").toString("utf-8");
   const colonIdx = decoded.indexOf(":");
   if (colonIdx === -1) return null;
-
   const username = decoded.slice(0, colonIdx);
   const password = decoded.slice(colonIdx + 1);
-
   const user = await db.user.findUnique({ where: { username } });
   if (!user) return null;
-
   const valid = await compare(password, user.passwordHash);
   if (!valid) return null;
-
   return { userId: user.id, username: user.username };
 }
 
@@ -40,16 +39,18 @@ function requireAuth(): Response {
 
 function findHeaderEnd(buf: Buffer): number {
   for (let i = 0; i < buf.length - 3; i++) {
-    if (buf[i] === 0x0d && buf[i + 1] === 0x0a && buf[i + 2] === 0x0d && buf[i + 3] === 0x0a) return i + 4;
+    if (
+      buf[i] === 0x0d &&
+      buf[i + 1] === 0x0a &&
+      buf[i + 2] === 0x0d &&
+      buf[i + 3] === 0x0a
+    )
+      return i + 4;
   }
   for (let i = 0; i < buf.length - 1; i++) {
     if (buf[i] === 0x0a && buf[i + 1] === 0x0a) return i + 2;
   }
   return -1;
-}
-
-function isEpipe(e: unknown): boolean {
-  return (e as NodeJS.ErrnoException)?.code === "EPIPE";
 }
 
 function runGitBackend(
@@ -69,7 +70,9 @@ function runGitBackend(
     REQUEST_METHOD: req.method,
     CONTENT_TYPE: req.headers.get("content-type") ?? "",
     CONTENT_LENGTH: req.headers.get("content-length") ?? "0",
-    QUERY_STRING: service ? `service=${service}` : (req.nextUrl.search.slice(1) || ""),
+    QUERY_STRING: service
+      ? `service=${service}`
+      : req.nextUrl.search.slice(1) || "",
     REMOTE_ADDR: "127.0.0.1",
     ...(remoteUser ? { REMOTE_USER: remoteUser } : {}),
   };
@@ -77,123 +80,121 @@ function runGitBackend(
   return new Promise((resolve) => {
     const proc = spawn("git", ["http-backend"], { env });
 
-    // Suppress EPIPE on stdin/stdout — git closes its end when done, which is normal
-    proc.stdin.on("error", (e: NodeJS.ErrnoException) => {
-      if (!isEpipe(e)) console.error("git stdin error:", e.message);
-    });
-    proc.stdout.on("error", (e: NodeJS.ErrnoException) => {
-      if (!isEpipe(e)) console.error("git stdout error:", e.message);
-    });
+    // Suppress EPIPE — normal when client closes connection after receiving response
+    const suppress = (e: NodeJS.ErrnoException) => {
+      if (e.code !== "EPIPE") console.error("git stream error:", e.message);
+    };
+    proc.stdin.on("error", suppress);
+    proc.stdout.on("error", suppress);
+    proc.stderr.on("data", (d: Buffer) =>
+      console.error("git http-backend:", d.toString().trimEnd())
+    );
 
-    // Stream request body to git stdin without buffering the whole thing
+    // Pipe request body → git stdin using Node.js native pipe (handles backpressure correctly)
     if (req.body && req.method === "POST") {
-      const reader = req.body.getReader();
-      (async () => {
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            // Respect backpressure: wait for drain if write returns false
-            const ok = proc.stdin.write(Buffer.from(value));
-            if (!ok) {
-              await new Promise<void>((res) => proc.stdin.once("drain", res));
+      try {
+        const src = Readable.fromWeb(
+          req.body as Parameters<typeof Readable.fromWeb>[0]
+        );
+        src.pipe(proc.stdin);
+        src.on("error", (e: NodeJS.ErrnoException) => {
+          if (e.code !== "EPIPE") console.error("body pipe error:", e.message);
+          try { proc.stdin.destroy(); } catch { /* ok */ }
+        });
+      } catch (e) {
+        // Fallback for environments where fromWeb isn't available
+        console.error("Readable.fromWeb unavailable, falling back:", e);
+        (async () => {
+          const reader = req.body!.getReader();
+          try {
+            for (;;) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              const ok = proc.stdin.write(Buffer.from(value));
+              if (!ok) await new Promise<void>((r) => proc.stdin.once("drain", r));
             }
+          } catch (e2) {
+            if ((e2 as NodeJS.ErrnoException).code !== "EPIPE")
+              console.error("pump error:", e2);
+          } finally {
+            try { proc.stdin.end(); } catch { /* ok */ }
           }
-        } catch (e) {
-          if (!isEpipe(e)) console.error("stdin pump error:", e);
-        } finally {
-          try { proc.stdin.end(); } catch { /* already closed */ }
-        }
-      })();
+        })();
+      }
     } else {
       proc.stdin.end();
     }
 
-    // Buffer stdout until headers are complete, then stream body in real-time
-    const headerChunks: Buffer[] = [];
-    let headersParsed = false;
-    let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
+    // Buffer CGI headers, then stream body in real-time
+    const headerBufs: Buffer[] = [];
+    let headersDone = false;
+    let ctrl: ReadableStreamDefaultController<Uint8Array> | null = null;
 
-    const body = new ReadableStream<Uint8Array>({
-      start(controller) {
-        streamController = controller;
-      },
+    const responseStream = new ReadableStream<Uint8Array>({
+      start(c) { ctrl = c; },
       cancel() {
-        // Client disconnected — kill the git process
-        try { proc.kill(); } catch { /* already gone */ }
+        // Client disconnected — kill git to avoid zombie processes
+        try { proc.kill("SIGTERM"); } catch { /* ok */ }
       },
     });
 
-    proc.stdout.on("data", (chunk: Buffer) => {
-      if (headersParsed) {
-        try { streamController?.enqueue(new Uint8Array(chunk)); } catch { /* stream closed */ }
-        return;
+    const tryResolve = (combined: Buffer) => {
+      const end = findHeaderEnd(combined);
+      if (end === -1) return;
+
+      headersDone = true;
+      const hdrStr = combined.slice(0, end).toString("utf-8");
+      const bodyBytes = combined.slice(end);
+
+      let status = 200;
+      const headers = new Headers({ "cache-control": "no-cache" });
+
+      for (const line of hdrStr.split(/\r?\n/)) {
+        const colon = line.indexOf(":");
+        if (colon === -1) continue;
+        const k = line.slice(0, colon).trim().toLowerCase();
+        const v = line.slice(colon + 1).trim();
+        if (!k) continue;
+        if (k === "status") status = parseInt(v.split(" ")[0], 10) || 200;
+        else headers.set(k, v);
       }
 
-      headerChunks.push(chunk);
-      const combined = Buffer.concat(headerChunks);
-      const headerEnd = findHeaderEnd(combined);
+      if (bodyBytes.length) {
+        try { ctrl?.enqueue(new Uint8Array(bodyBytes)); } catch { /* ok */ }
+      }
 
-      if (headerEnd !== -1) {
-        headersParsed = true;
-        const headerStr = combined.slice(0, headerEnd).toString("utf-8");
-        const remaining = combined.slice(headerEnd);
+      resolve(new Response(responseStream, { status, headers }));
+    };
 
-        let status = 200;
-        const headers = new Headers();
-        headers.set("cache-control", "no-cache");
-        headers.set("x-content-type-options", "nosniff");
-
-        for (const line of headerStr.split(/\r?\n/)) {
-          if (!line.trim()) continue;
-          const colonIdx = line.indexOf(":");
-          if (colonIdx === -1) continue;
-          const key = line.slice(0, colonIdx).trim().toLowerCase();
-          const val = line.slice(colonIdx + 1).trim();
-          if (key === "status") {
-            status = parseInt(val.split(" ")[0], 10) || 200;
-          } else {
-            headers.set(key, val);
-          }
-        }
-
-        if (remaining.length > 0) {
-          try { streamController?.enqueue(new Uint8Array(remaining)); } catch { /* stream closed */ }
-        }
-
-        resolve(new Response(body, { status, headers }));
+    proc.stdout.on("data", (chunk: Buffer) => {
+      if (headersDone) {
+        try { ctrl?.enqueue(new Uint8Array(chunk)); } catch { /* ok */ }
+      } else {
+        headerBufs.push(chunk);
+        tryResolve(Buffer.concat(headerBufs));
       }
     });
 
     proc.stdout.on("end", () => {
-      try { streamController?.close(); } catch { /* already closed */ }
-    });
-
-    proc.stderr.on("data", (d: Buffer) => {
-      console.error("git http-backend:", d.toString().trimEnd());
+      try { ctrl?.close(); } catch { /* ok */ }
     });
 
     proc.on("error", (err) => {
       console.error("git spawn error:", err);
-      if (!headersParsed) {
-        resolve(new Response("git not available", { status: 500 }));
-      } else {
-        try { streamController?.error(err); } catch { /* already closed */ }
-      }
+      if (!headersDone) resolve(new Response("git unavailable", { status: 500 }));
     });
 
     proc.on("close", (code) => {
-      if (!headersParsed) {
-        resolve(new Response(`git exited with code ${code}`, { status: 500 }));
+      if (!headersDone) {
+        console.error(`git exited with code ${code} before sending headers`);
+        resolve(new Response(`git error (${code})`, { status: 500 }));
       }
-      // Stream is closed by stdout 'end' event above
     });
   });
 }
 
 async function handle(req: NextRequest, { params }: Params) {
   const { user, repo: repoName, gitpath } = await params;
-
   const cleanRepo = repoName.replace(/\.git$/, "");
 
   const ownerUser = await db.user.findUnique({ where: { username: user } });
@@ -206,7 +207,8 @@ async function handle(req: NextRequest, { params }: Params) {
 
   const pathStr = gitpath.join("/");
   const isReadOperation =
-    (pathStr.includes("info/refs") && req.nextUrl.searchParams.get("service") === "git-upload-pack") ||
+    (pathStr.includes("info/refs") &&
+      req.nextUrl.searchParams.get("service") === "git-upload-pack") ||
     pathStr.endsWith("git-upload-pack");
 
   let authenticatedUser: string | null = null;
@@ -214,14 +216,17 @@ async function handle(req: NextRequest, { params }: Params) {
   if (repo.isPrivate || !isReadOperation) {
     const session = await authenticate(req);
     if (!session) return requireAuth();
-
     if (!isReadOperation && session.username !== user) {
       return new Response("Forbidden", { status: 403 });
     }
     authenticatedUser = session.username;
   }
 
-  return runGitBackend(req, [user, `${cleanRepo}.git`, ...gitpath], authenticatedUser);
+  return runGitBackend(
+    req,
+    [user, `${cleanRepo}.git`, ...gitpath],
+    authenticatedUser
+  );
 }
 
 export const GET = handle;
