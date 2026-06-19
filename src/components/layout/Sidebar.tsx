@@ -139,7 +139,7 @@ export default function Sidebar({ user }: { user: SidebarUser }) {
       {/* Main nav */}
       <nav style={{ marginBottom: 8 }}>
         {NAV.map((item) => {
-          const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
+          const active = pathname === item.href || pathname.startsWith(item.href + "/");
           return (
             <NavLink
               key={item.href}
@@ -250,7 +250,7 @@ export default function Sidebar({ user }: { user: SidebarUser }) {
       {/* Settings nav */}
       <nav style={{ paddingBottom: 4 }}>
         {SETTINGS_NAV.map((item) => {
-          const active = pathname.startsWith(item.href);
+          const active = pathname === item.href || pathname.startsWith(item.href + "/");
           return (
             <NavLink
               key={item.href}

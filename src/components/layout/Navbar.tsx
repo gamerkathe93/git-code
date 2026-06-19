@@ -59,13 +59,14 @@ export default function Navbar({ user }: { user: NavbarUser }) {
       </Link>
 
       {/* Search */}
-      <div style={{ flex: 1, maxWidth: 440, position: "relative" }}>
+      <form action="/search" method="GET" style={{ flex: 1, maxWidth: 440, position: "relative" }}>
         <Search size={13} style={{
           position: "absolute", left: 10, top: "50%",
           transform: "translateY(-50%)", color: "var(--text-subtle)", pointerEvents: "none",
         }} />
         <input
-          placeholder="Search repos, issues, PRs…"
+          name="q"
+          placeholder="Search repos, issues, users…"
           style={{
             paddingLeft: 32, paddingRight: 36,
             background: "rgba(255,255,255,0.04)",
@@ -90,7 +91,7 @@ export default function Navbar({ user }: { user: NavbarUser }) {
           border: "1px solid var(--border)", borderRadius: 4, padding: "1px 5px",
           letterSpacing: "0.04em",
         }}>/</span>
-      </div>
+      </form>
 
       <nav style={{ display: "flex", alignItems: "center", gap: 3, marginLeft: "auto" }}>
         {[

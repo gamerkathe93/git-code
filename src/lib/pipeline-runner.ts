@@ -12,10 +12,18 @@ interface PipelineJobDef {
   script: string[];
   image?: string;
   env?: Record<string, string>;
+  allowFailure?: boolean;
+}
+
+interface PipelineSchedule {
+  cron?: string;
+  branch?: string;
 }
 
 interface PipelineConfig {
   stages?: string[];
+  variables?: Record<string, string>;
+  schedule?: PipelineSchedule;
   jobs: Record<string, PipelineJobDef>;
 }
 
@@ -28,25 +36,42 @@ export function parsePipelineConfig(yaml: string): PipelineConfig | null {
       ? (raw.stages as string[])
       : ["build", "test", "deploy"];
 
+    // Global variables merged into every job
+    const globalVars: Record<string, string> =
+      raw.variables && typeof raw.variables === "object"
+        ? (raw.variables as Record<string, string>)
+        : {};
+
+    // Schedule config
+    const schedule: PipelineSchedule | undefined =
+      raw.schedule && typeof raw.schedule === "object"
+        ? (raw.schedule as PipelineSchedule)
+        : undefined;
+
+    const RESERVED = new Set(["stages", "image", "variables", "schedule", "default", "include", "workflow"]);
+
     const jobs: Record<string, PipelineJobDef> = {};
     for (const [key, val] of Object.entries(raw)) {
-      if (key === "stages" || key === "image" || key === "variables") continue;
+      if (RESERVED.has(key)) continue;
       if (typeof val === "object" && val !== null) {
         const job = val as Record<string, unknown>;
         if (job.script) {
+          // Merge global vars with per-job vars (job vars take precedence)
+          const jobVars = (job.variables as Record<string, string>) ?? {};
           jobs[key] = {
             name: key,
             stage: (job.stage as string) ?? stages[0],
             script: Array.isArray(job.script)
               ? (job.script as string[])
               : [job.script as string],
-            env: (job.variables as Record<string, string>) ?? {},
+            env: { ...globalVars, ...jobVars },
+            allowFailure: (job.allow_failure as boolean) ?? false,
           };
         }
       }
     }
 
-    return { stages, jobs };
+    return { stages, variables: globalVars, schedule, jobs };
   } catch (e) {
     console.error("parsePipelineConfig error:", e);
     return null;
@@ -185,7 +210,7 @@ export async function runPipeline(pipelineId: string, username: string, repoName
         },
       });
 
-      if (!success) {
+      if (!success && !jobDef.allowFailure) {
         pipelineSuccess = false;
         // Cancel remaining jobs
         await db.pipelineJob.updateMany({

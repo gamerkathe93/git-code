@@ -8,53 +8,54 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q") || "";
-  const type = searchParams.get("type") || "all";
 
-  if (!q) return NextResponse.json({ results: {}, total: 0 });
+  if (!q.trim()) {
+    return NextResponse.json({ repos: [], users: [], issues: [] });
+  }
 
-  const results: Record<string, unknown[]> = {};
-  let total = 0;
-
-  if (type === "all" || type === "repos") {
-    const repos = await db.repository.findMany({
+  const [repos, users, issues] = await Promise.all([
+    db.repository.findMany({
       where: {
         isPrivate: false,
         OR: [{ name: { contains: q } }, { description: { contains: q } }],
       },
-      include: { owner: { select: { username: true, avatarUrl: true } } },
-      take: 10,
-    });
-    results.repos = repos;
-    total += repos.length;
-  }
-
-  if (type === "all" || type === "users") {
-    const users = await db.user.findMany({
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        starsCount: true,
+        language: true,
+        owner: { select: { username: true } },
+      },
+      take: 5,
+    }),
+    db.user.findMany({
       where: {
         OR: [{ username: { contains: q } }, { name: { contains: q } }],
       },
-      select: { id: true, username: true, name: true, avatarUrl: true, bio: true },
-      take: 10,
-    });
-    results.users = users;
-    total += users.length;
-  }
-
-  if (type === "all" || type === "issues") {
-    const issues = await db.issue.findMany({
+      select: { id: true, username: true, name: true, avatarUrl: true },
+      take: 5,
+    }),
+    db.issue.findMany({
       where: {
         repo: { isPrivate: false },
-        OR: [{ title: { contains: q } }, { body: { contains: q } }],
+        title: { contains: q },
       },
-      include: {
-        author: { select: { username: true, avatarUrl: true } },
-        repo: { include: { owner: { select: { username: true } } } },
+      select: {
+        id: true,
+        number: true,
+        title: true,
+        state: true,
+        repo: {
+          select: {
+            name: true,
+            owner: { select: { username: true } },
+          },
+        },
       },
-      take: 10,
-    });
-    results.issues = issues;
-    total += issues.length;
-  }
+      take: 5,
+    }),
+  ]);
 
-  return NextResponse.json({ results, total, query: q });
+  return NextResponse.json({ repos, users, issues });
 }

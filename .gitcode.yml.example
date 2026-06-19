@@ -1,0 +1,71 @@
+# .gitcode.yml — GitCode CI/CD Pipeline Configuration
+#
+# Place this file at the root of your repository as `.gitcode.yml`
+# Pipelines run automatically on push, or can be triggered manually.
+#
+# Supported config files (checked in order):
+#   .gitcode.yml   ← recommended
+#   .gitlab-ci.yml ← GitLab-compatible subset
+#   .ci.yml
+
+# ── Stages ────────────────────────────────────────────────────────────────────
+# Define the order stages run in. Jobs in the same stage run sequentially.
+# If a job fails, all subsequent stages are cancelled.
+stages:
+  - build
+  - test
+  - deploy
+
+# ── Global variables ──────────────────────────────────────────────────────────
+# Available as environment variables in every job.
+variables:
+  NODE_ENV: production
+  APP_NAME: my-app
+
+# ── Jobs ──────────────────────────────────────────────────────────────────────
+# Each top-level key (except stages/variables/schedule) is a job.
+# Jobs must have a `script` field (list of shell commands).
+
+install-deps:
+  stage: build
+  script:
+    - echo "Installing dependencies..."
+    - npm ci
+  # Per-job variables (merged with global variables)
+  variables:
+    NPM_CONFIG_LOGLEVEL: warn
+
+build-app:
+  stage: build
+  script:
+    - echo "Building $APP_NAME..."
+    - npm run build
+    - echo "Build complete"
+
+run-tests:
+  stage: test
+  script:
+    - echo "Running tests..."
+    - npm test
+    - echo "Tests passed"
+
+lint:
+  stage: test
+  script:
+    - npm run lint
+
+deploy-production:
+  stage: deploy
+  script:
+    - echo "Deploying to production..."
+    - ./deploy.sh
+  # Only run on main branch (coming soon — branch conditions)
+  variables:
+    DEPLOY_ENV: production
+
+# ── Schedule ──────────────────────────────────────────────────────────────────
+# Run this pipeline on a cron schedule (in addition to push triggers).
+# Format: standard cron (minute hour day month weekday)
+schedule:
+  cron: "0 2 * * *"   # Every day at 2 AM
+  branch: main         # Branch to run on

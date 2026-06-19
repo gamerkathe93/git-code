@@ -73,7 +73,16 @@ export default function NewPullRequestPage() {
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {branches.length < 2 && (
+        <div style={{
+          background: "rgba(234,179,8,0.08)", border: "1px solid rgba(234,179,8,0.25)",
+          borderRadius: 8, padding: "14px 18px", color: "var(--text-muted)", fontSize: 14,
+        }}>
+          You need at least 2 branches to open a pull request.
+        </div>
+      )}
+
+      {branches.length >= 2 && <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
         {error && (
           <div style={{
             background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)",
@@ -174,7 +183,7 @@ export default function NewPullRequestPage() {
             ) : isDraft ? "Create draft PR" : "Create pull request"}
           </button>
         </div>
-      </form>
+      </form>}
     </div>
   );
 }

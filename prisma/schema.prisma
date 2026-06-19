@@ -32,6 +32,8 @@ model User {
   organizations    Organization[]
   orgMemberships   OrgMember[]
   issueAssignments IssueAssignee[] @relation("IssueAssignee")
+  releases      Release[]      @relation("ReleaseAuthor")
+  wikiPages     WikiPage[]     @relation("WikiAuthor")
 }
 
 model Repository {
@@ -62,6 +64,8 @@ model Repository {
   stars        Star[]
   pipelines    Pipeline[]
   webhooks     Webhook[]
+  releases     Release[]
+  wikiPages    WikiPage[]
 
   @@unique([ownerId, name])
 }
@@ -271,4 +275,34 @@ model OrgMember {
   org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@id([userId, orgId])
+}
+
+model Release {
+  id           String   @id @default(cuid())
+  tagName      String
+  name         String   @default("")
+  body         String   @default("")
+  isDraft      Boolean  @default(false)
+  isPrerelease Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  repoId   String
+  repo     Repository @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  authorId String
+  author   User       @relation("ReleaseAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  @@unique([repoId, tagName])
+}
+
+model WikiPage {
+  id        String   @id @default(cuid())
+  slug      String
+  title     String
+  content   String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  repoId   String
+  repo     Repository @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  authorId String
+  author   User       @relation("WikiAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  @@unique([repoId, slug])
 }

@@ -1,8 +1,9 @@
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
-import { Users, BookMarked } from "lucide-react";
+import { Users, BookMarked, Lock, Star } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { timeAgo } from "@/lib/utils";
 
 type Params = { params: Promise<{ org: string }> };
 
@@ -28,6 +29,19 @@ export default async function OrgPage({ params }: Params) {
 
   const isOwner = org.ownerId === session.userId;
 
+  const members = await db.orgMember.findMany({
+    where: { orgId: org.id },
+    select: { userId: true },
+  });
+  const memberIds = members.map((m) => m.userId);
+
+  const repos = await db.repository.findMany({
+    where: { ownerId: { in: memberIds }, isPrivate: false },
+    include: { owner: { select: { username: true } } },
+    orderBy: { starsCount: "desc" },
+    take: 20,
+  });
+
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto" }}>
       <div className="card" style={{ padding: 24, marginBottom: 24, display: "flex", alignItems: "center", gap: 20 }}>
@@ -45,9 +59,47 @@ export default async function OrgPage({ params }: Params) {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: 24 }}>
-        <div className="card" style={{ padding: 32, textAlign: "center" }}>
-          <BookMarked size={32} style={{ margin: "0 auto 12px", opacity: 0.3 }} />
-          <p style={{ color: "var(--text-muted)" }}>No repositories yet.</p>
+        <div>
+          {repos.length === 0 ? (
+            <div className="card" style={{ padding: 32, textAlign: "center" }}>
+              <BookMarked size={32} style={{ margin: "0 auto 12px", opacity: 0.3 }} />
+              <p style={{ color: "var(--text-muted)" }}>No public repositories yet.</p>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {repos.map((repo) => (
+                <div key={repo.id} className="card" style={{ padding: "16px 20px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                        <Link
+                          href={`/${repo.owner.username}/${repo.name}`}
+                          style={{ fontSize: 15, fontWeight: 600, color: "var(--accent)" }}
+                        >
+                          {repo.owner.username}/{repo.name}
+                        </Link>
+                        {repo.isPrivate && (
+                          <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, color: "var(--text-muted)", border: "1px solid var(--border)", borderRadius: 4, padding: "1px 6px" }}>
+                            <Lock size={10} /> Private
+                          </span>
+                        )}
+                      </div>
+                      {repo.description && (
+                        <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 8 }}>{repo.description}</p>
+                      )}
+                      <div style={{ display: "flex", gap: 16, fontSize: 12, color: "var(--text-muted)" }}>
+                        {repo.language && <span>{repo.language}</span>}
+                        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          <Star size={12} /> {repo.starsCount}
+                        </span>
+                        <span>Updated {timeAgo(repo.updatedAt.toISOString())}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="card" style={{ padding: 20 }}>

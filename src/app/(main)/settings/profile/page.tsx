@@ -7,6 +7,7 @@ export default function ProfileSettingsPage() {
   const [form, setForm] = useState({ name: "", bio: "", company: "", location: "", website: "" });
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [username, setUsername] = useState("");
 
   useEffect(() => {
@@ -27,13 +28,27 @@ export default function ProfileSettingsPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    const res = await fetch(`/api/users/${username}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
-    setLoading(false);
-    if (res.ok) { setSaved(true); setTimeout(() => setSaved(false), 3000); router.refresh(); }
+    setSaveError("");
+    setSaved(false);
+    try {
+      const res = await fetch(`/api/users/${username}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (res.ok) {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+        router.refresh();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setSaveError(data.error ?? "Failed to save profile. Please try again.");
+      }
+    } catch {
+      setSaveError("Network error. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   const field = (label: string, key: keyof typeof form, type = "text", hint?: string) => (
@@ -69,11 +84,16 @@ export default function ProfileSettingsPage() {
           {field("Location", "location")}
           {field("Website", "website", "url")}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button type="submit" className="btn btn-primary" disabled={loading}>
-            {loading ? "Saving…" : "Save profile"}
-          </button>
-          {saved && <span style={{ color: "#3fb950", fontSize: 13 }}>✓ Profile saved</span>}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <button type="submit" className="btn btn-primary" disabled={loading}>
+              {loading ? "Saving…" : "Save profile"}
+            </button>
+            {saved && <span style={{ color: "#3fb950", fontSize: 13 }}>✓ Profile saved</span>}
+          </div>
+          {saveError && (
+            <span style={{ color: "#ef4444", fontSize: 13 }}>{saveError}</span>
+          )}
         </div>
       </form>
     </div>
