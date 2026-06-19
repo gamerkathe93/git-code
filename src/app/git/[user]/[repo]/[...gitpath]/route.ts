@@ -36,7 +36,7 @@ function requireAuth(): Response {
   });
 }
 
-async function runGitBackend(req: NextRequest, repoPath: string, gitpath: string[]): Promise<Response> {
+async function runGitBackend(req: NextRequest, repoPath: string, gitpath: string[], remoteUser: string | null = null): Promise<Response> {
   const service = req.nextUrl.searchParams.get("service") ?? "";
   const pathStr = gitpath.join("/");
 
@@ -51,8 +51,9 @@ async function runGitBackend(req: NextRequest, repoPath: string, gitpath: string
     REQUEST_METHOD: req.method,
     CONTENT_TYPE: req.headers.get("content-type") ?? "",
     QUERY_STRING: service ? `service=${service}` : req.nextUrl.search.slice(1),
-    GIT_REPOSITORY: repoPath,
     REMOTE_ADDR: "127.0.0.1",
+    // REMOTE_USER must be set for git-http-backend to allow push (receive-pack)
+    ...(remoteUser ? { REMOTE_USER: remoteUser } : {}),
   };
 
   const body = req.method === "POST" ? await req.arrayBuffer() : null;
@@ -130,11 +131,12 @@ async function handle(req: NextRequest, { params }: Params) {
   });
   if (!repo) return new Response("Not found", { status: 404 });
 
-  // Public repos allow anonymous read (git-upload-pack = clone/fetch)
+  const pathStr = gitpath.join("/");
   const isReadOperation =
-    gitpath.join("/").includes("info/refs") &&
-    req.nextUrl.searchParams.get("service") === "git-upload-pack" ||
-    gitpath.join("/").endsWith("git-upload-pack");
+    (pathStr.includes("info/refs") && req.nextUrl.searchParams.get("service") === "git-upload-pack") ||
+    pathStr.endsWith("git-upload-pack");
+
+  let authenticatedUser: string | null = null;
 
   if (repo.isPrivate || !isReadOperation) {
     const session = await authenticate(req);
@@ -144,9 +146,10 @@ async function handle(req: NextRequest, { params }: Params) {
     if (!isReadOperation && session.username !== user) {
       return new Response("Forbidden", { status: 403 });
     }
+    authenticatedUser = session.username;
   }
 
-  return runGitBackend(req, repoPath, [user, `${cleanRepo}.git`, ...gitpath]);
+  return runGitBackend(req, repoPath, [user, `${cleanRepo}.git`, ...gitpath], authenticatedUser);
 }
 
 export const GET = handle;
