@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { compare } from "bcryptjs";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300; // 5 min for large pushes
+export const maxDuration = 300;
 
 const REPO_BASE = process.env.REPO_STORAGE_PATH ?? path.join(process.env.HOME ?? "~", ".gitcode", "repos");
 
@@ -38,7 +38,16 @@ function requireAuth(): Response {
   });
 }
 
-async function runGitBackend(
+function findHeaderEnd(buf: Buffer): number {
+  for (let i = 0; i < buf.length - 1; i++) {
+    if (buf[i] === 0x0d && buf[i + 1] === 0x0a && i + 3 < buf.length &&
+        buf[i + 2] === 0x0d && buf[i + 3] === 0x0a) return i + 4;
+    if (buf[i] === 0x0a && buf[i + 1] === 0x0a) return i + 2;
+  }
+  return -1;
+}
+
+function runGitBackend(
   req: NextRequest,
   gitpath: string[],
   remoteUser: string | null
@@ -63,10 +72,10 @@ async function runGitBackend(
   return new Promise((resolve) => {
     const proc = spawn("git", ["http-backend"], { env });
 
-    // Stream request body → git stdin (avoids buffering 100MB+ pushes)
+    // Stream request body directly to git stdin — avoids buffering large pushes
     if (req.body && req.method === "POST") {
       const reader = req.body.getReader();
-      const pump = async () => {
+      (async () => {
         try {
           while (true) {
             const { done, value } = await reader.read();
@@ -78,22 +87,26 @@ async function runGitBackend(
         } finally {
           proc.stdin.end();
         }
-      };
-      pump();
+      })();
     } else {
       proc.stdin.end();
     }
 
-    // Buffer stdout to parse CGI headers, then stream the rest
+    // Buffer stdout until headers are fully received, then stream the rest
+    // This lets git send-pack receive sideband packets in real-time
     const headerChunks: Buffer[] = [];
     let headersParsed = false;
-    let responseStatus = 200;
-    const responseHeaders = new Headers();
-    const bodyChunks: Buffer[] = [];
+    let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
+
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        streamController = controller;
+      },
+    });
 
     proc.stdout.on("data", (chunk: Buffer) => {
       if (headersParsed) {
-        bodyChunks.push(chunk);
+        streamController?.enqueue(new Uint8Array(chunk));
         return;
       }
 
@@ -103,10 +116,13 @@ async function runGitBackend(
 
       if (headerEnd !== -1) {
         headersParsed = true;
-        const headerStr = combined.slice(0, headerEnd).toString("utf-8");
-        const bodyStart = headerEnd + (combined.slice(headerEnd, headerEnd + 2).toString() === "\r\n" ? 2 : 0);
-        const remaining = combined.slice(bodyStart);
-        if (remaining.length > 0) bodyChunks.push(remaining);
+        const headerStr = combined.slice(0, headerEnd - (combined[headerEnd - 4] === 0x0d ? 4 : 2)).toString("utf-8");
+        const remaining = combined.slice(headerEnd);
+
+        let status = 200;
+        const headers = new Headers();
+        headers.set("cache-control", "no-cache");
+        headers.set("x-content-type-options", "nosniff");
 
         for (const line of headerStr.split(/\r?\n/)) {
           if (!line.trim()) continue;
@@ -115,45 +131,44 @@ async function runGitBackend(
           const key = line.slice(0, colonIdx).trim().toLowerCase();
           const val = line.slice(colonIdx + 1).trim();
           if (key === "status") {
-            responseStatus = parseInt(val.split(" ")[0], 10) || 200;
+            status = parseInt(val.split(" ")[0], 10) || 200;
           } else {
-            responseHeaders.set(key, val);
+            headers.set(key, val);
           }
         }
+
+        // Enqueue any body bytes already received after headers
+        if (remaining.length > 0) {
+          streamController?.enqueue(new Uint8Array(remaining));
+        }
+
+        // Resolve immediately so client starts receiving data
+        resolve(new Response(body, { status, headers }));
       }
     });
 
-    proc.stderr.on("data", (chunk: Buffer) => {
-      console.error("git http-backend stderr:", chunk.toString());
+    proc.stdout.on("end", () => {
+      streamController?.close();
     });
 
-    proc.stdout.on("end", () => {
-      const body = Buffer.concat(bodyChunks);
-      resolve(new Response(body, { status: responseStatus, headers: responseHeaders }));
+    proc.stderr.on("data", (d: Buffer) => {
+      console.error("git http-backend:", d.toString());
     });
 
     proc.on("error", (err) => {
-      console.error("git http-backend spawn error:", err);
-      resolve(new Response("git not available on this server", { status: 500 }));
+      console.error("git spawn error:", err);
+      streamController?.error(err);
+      if (!headersParsed) {
+        resolve(new Response("git not available", { status: 500 }));
+      }
     });
 
     proc.on("close", (code) => {
-      if (code !== 0 && bodyChunks.length === 0) {
+      if (!headersParsed) {
         resolve(new Response(`git exited with code ${code}`, { status: 500 }));
       }
     });
   });
-}
-
-// Find end of CGI headers (\r\n\r\n or \n\n)
-function findHeaderEnd(buf: Buffer): number {
-  for (let i = 0; i < buf.length - 1; i++) {
-    if (buf[i] === 0x0a && buf[i + 1] === 0x0a) return i + 2;
-    if (i + 3 < buf.length &&
-      buf[i] === 0x0d && buf[i + 1] === 0x0a &&
-      buf[i + 2] === 0x0d && buf[i + 3] === 0x0a) return i + 4;
-  }
-  return -1;
 }
 
 async function handle(req: NextRequest, { params }: Params) {
@@ -186,9 +201,7 @@ async function handle(req: NextRequest, { params }: Params) {
     authenticatedUser = session.username;
   }
 
-  // Pass full path: /user/repo.git/info/refs etc.
-  const fullGitPath = [user, `${cleanRepo}.git`, ...gitpath];
-  return runGitBackend(req, fullGitPath, authenticatedUser);
+  return runGitBackend(req, [user, `${cleanRepo}.git`, ...gitpath], authenticatedUser);
 }
 
 export const GET = handle;
