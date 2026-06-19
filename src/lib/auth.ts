@@ -1,6 +1,8 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
+import crypto from "crypto";
+import { db } from "@/lib/db";
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET ?? "dev-secret-please-change-in-production"
@@ -59,4 +61,28 @@ export function clearSessionCookie(response: Response): void {
     "Set-Cookie",
     `${COOKIE_NAME}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax`
   );
+}
+
+export async function getSessionFromToken(tokenString: string): Promise<SessionPayload | null> {
+  try {
+    const tokenHash = crypto.createHash("sha256").update(tokenString).digest("hex");
+
+    const pat = await (db as any).personalAccessToken.findUnique({ where: { tokenHash } });
+    if (!pat) return null;
+
+    if (pat.expiresAt && pat.expiresAt < new Date()) return null;
+
+    // Update lastUsedAt without awaiting to avoid blocking the response
+    (db as any).personalAccessToken.update({
+      where: { id: pat.id },
+      data: { lastUsedAt: new Date() },
+    }).catch(() => {});
+
+    const user = await db.user.findUnique({ where: { id: pat.userId } });
+    if (!user) return null;
+
+    return { userId: user.id, username: user.username, email: user.email };
+  } catch {
+    return null;
+  }
 }

@@ -34,6 +34,9 @@ model User {
   issueAssignments IssueAssignee[] @relation("IssueAssignee")
   releases      Release[]      @relation("ReleaseAuthor")
   wikiPages     WikiPage[]     @relation("WikiAuthor")
+  prReviews     PRReviewer[]   @relation("PRReviewer")
+  accessTokens  PersonalAccessToken[]
+  sshKeys       SSHKey[]
 }
 
 model Repository {
@@ -57,15 +60,16 @@ model Repository {
   ownerId String
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
-  issues       Issue[]
-  pullRequests PullRequest[]
-  labels       Label[]
-  milestones   Milestone[]
-  stars        Star[]
-  pipelines    Pipeline[]
-  webhooks     Webhook[]
-  releases     Release[]
-  wikiPages    WikiPage[]
+  issues            Issue[]
+  pullRequests      PullRequest[]
+  labels            Label[]
+  milestones        Milestone[]
+  stars             Star[]
+  pipelines         Pipeline[]
+  webhooks          Webhook[]
+  releases          Release[]
+  wikiPages         WikiPage[]
+  branchProtections BranchProtection[]
 
   @@unique([ownerId, name])
 }
@@ -132,9 +136,34 @@ model PullRequest {
   authorId String
   author   User       @relation("PRAuthor", fields: [authorId], references: [id], onDelete: Cascade)
 
-  comments Comment[]
+  comments  Comment[]
+  labels    PRLabel[]
+  reviewers PRReviewer[]
 
   @@unique([repoId, number])
+}
+
+model PRLabel {
+  pullRequestId String
+  labelId       String
+  pullRequest   PullRequest @relation(fields: [pullRequestId], references: [id], onDelete: Cascade)
+  label         Label       @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([pullRequestId, labelId])
+}
+
+model PRReviewer {
+  id            String      @id @default(cuid())
+  pullRequestId String
+  pullRequest   PullRequest @relation(fields: [pullRequestId], references: [id], onDelete: Cascade)
+  reviewerId    String
+  reviewer      User        @relation("PRReviewer", fields: [reviewerId], references: [id], onDelete: Cascade)
+  state         String      @default("requested") // requested | approved | changes_requested
+  body          String      @default("")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([pullRequestId, reviewerId])
 }
 
 model Label {
@@ -147,6 +176,7 @@ model Label {
   repo   Repository @relation(fields: [repoId], references: [id], onDelete: Cascade)
 
   issues IssueLabel[]
+  prs    PRLabel[]
 
   @@unique([repoId, name])
 }
@@ -171,6 +201,12 @@ model Comment {
   body      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Inline diff comment fields (PR reviews)
+  path      String?  // file path e.g. "src/foo.ts"
+  lineRef   Int?     // line number in the diff
+  side      String?  // "LEFT" or "RIGHT"
+  commitSha String?  // commit the comment is anchored to
 
   authorId String
   author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
@@ -246,8 +282,22 @@ model Webhook {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  repoId String
-  repo   Repository @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  repoId    String
+  repo      Repository      @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  deliveries WebhookDelivery[]
+}
+
+model WebhookDelivery {
+  id           String   @id @default(cuid())
+  event        String
+  status       Int      // HTTP status code
+  requestBody  String   @default("")
+  responseBody String   @default("")
+  duration     Int      @default(0) // ms
+  createdAt    DateTime @default(now())
+
+  webhookId String
+  webhook   Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
 }
 
 model Organization {
@@ -305,4 +355,49 @@ model WikiPage {
   authorId String
   author   User       @relation("WikiAuthor", fields: [authorId], references: [id], onDelete: Cascade)
   @@unique([repoId, slug])
+}
+
+model PersonalAccessToken {
+  id          String    @id @default(cuid())
+  name        String
+  tokenHash   String    @unique
+  tokenPrefix String    // first 8 chars shown after creation
+  scopes      String    @default("repo") // comma-separated: repo, issues, admin
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SSHKey {
+  id          String   @id @default(cuid())
+  title       String
+  keyType     String   // ssh-rsa, ssh-ed25519, etc.
+  keyBody     String   // the actual public key
+  fingerprint String
+  lastUsedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model BranchProtection {
+  id                     String   @id @default(cuid())
+  pattern                String   // e.g. "main" or "release/*"
+  requirePullRequest     Boolean  @default(true)
+  requiredApprovals      Int      @default(1)
+  requireStatusChecks    Boolean  @default(false)
+  dismissStaleReviews    Boolean  @default(false)
+  restrictPushAccess     Boolean  @default(false)
+  allowForcePush         Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  repoId String
+  repo   Repository @relation(fields: [repoId], references: [id], onDelete: Cascade)
+
+  @@unique([repoId, pattern])
 }

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   GitBranch, Bell, Plus, Search, ChevronDown,
-  User, Settings, LogOut, BookMarked, Code, Zap
+  CircleUser, Settings2, LogOut, FolderGit2, User, Zap
 } from "lucide-react";
 
 interface NavbarUser {
@@ -133,7 +133,7 @@ export default function Navbar({ user }: { user: NavbarUser }) {
               animation: "fadeInScale 0.15s ease both",
             }}>
               {[
-                { href: "/new", icon: <Code size={14} />, label: "New repository" },
+                { href: "/new", icon: <FolderGit2 size={14} />, label: "New repository" },
                 { href: "/new-org", icon: <User size={14} />, label: "New organization" },
               ].map((item) => (
                 <Link key={item.href} href={item.href} style={{
@@ -243,9 +243,9 @@ export default function Navbar({ user }: { user: NavbarUser }) {
               </div>
 
               {[
-                { href: `/${user.username}`, icon: <User size={14} />, label: "Your profile" },
-                { href: "/repositories", icon: <BookMarked size={14} />, label: "Your repositories" },
-                { href: "/settings", icon: <Settings size={14} />, label: "Settings" },
+                { href: `/${user.username}`, icon: <CircleUser size={14} />, label: "Your profile" },
+                { href: "/repositories", icon: <FolderGit2 size={14} />, label: "Your repositories" },
+                { href: "/settings", icon: <Settings2 size={14} />, label: "Settings" },
               ].map((item) => (
                 <Link key={item.href} href={item.href} style={{
                   display: "flex", alignItems: "center", gap: 9,

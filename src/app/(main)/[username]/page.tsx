@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
-import { MapPin, Link2, Building2, Star, GitFork, Lock } from "lucide-react";
+import { MapPin, Link2, Building2, Star, GitFork, LockKeyhole } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getLanguageColor, timeAgo, formatNumber } from "@/lib/utils";
+import ContributionGraph from "@/components/user/ContributionGraph";
 
 type Params = { params: Promise<{ username: string }> };
 
@@ -106,7 +107,7 @@ export default async function UserProfilePage({ params }: Params) {
                     <Link href={`/${username}/${repo.name}`} style={{ fontWeight: 600, fontSize: 14 }}>
                       {repo.name}
                     </Link>
-                    {repo.isPrivate && <Lock size={12} color="var(--text-muted)" />}
+                    {repo.isPrivate && <LockKeyhole size={12} color="var(--text-muted)" />}
                   </div>
                   {repo.description && (
                     <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10, lineHeight: 1.5 }}>
@@ -131,6 +132,11 @@ export default async function UserProfilePage({ params }: Params) {
               ))}
             </div>
           )}
+
+          {/* Contribution graph */}
+          <div style={{ marginTop: 32 }}>
+            <ContributionGraph username={username} />
+          </div>
         </div>
       </div>
     </div>

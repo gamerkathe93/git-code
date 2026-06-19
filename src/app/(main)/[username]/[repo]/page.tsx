@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
-import { GitBranch, FileText, Folder, Clock, Terminal } from "lucide-react";
+import { GitBranch, FileCode2, Folder, Clock, SquareTerminal, Download } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getTree, getCommits, getFileContent, hasAnyCommit, getCloneUrls } from "@/lib/git";
@@ -93,7 +93,7 @@ export default async function RepoCodePage({ params }: Params) {
                     <div key={entry.path} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", borderBottom: i < tree.length - 1 ? "1px solid var(--border)" : "none" }}>
                       {entry.type === "tree"
                         ? <Folder size={16} color="#58a6ff" />
-                        : <FileText size={16} color="var(--text-muted)" />}
+                        : <FileCode2 size={16} color="var(--text-muted)" />}
                       <Link
                         href={entry.type === "tree"
                           ? `/${username}/${repoName}/tree/${repo.defaultBranch}/${entry.path}`
@@ -110,7 +110,7 @@ export default async function RepoCodePage({ params }: Params) {
               {readme && (
                 <div className="card" style={{ padding: 24 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, paddingBottom: 12, borderBottom: "1px solid var(--border)" }}>
-                    <FileText size={16} />
+                    <FileCode2 size={16} />
                     <span style={{ fontWeight: 600, fontSize: 14 }}>README.md</span>
                   </div>
                   <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 14, lineHeight: 1.6, color: "var(--text-muted)" }}>
@@ -127,7 +127,7 @@ export default async function RepoCodePage({ params }: Params) {
               </p>
               <div style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, padding: 16, marginBottom: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                  <Terminal size={14} color="var(--text-muted)" />
+                  <SquareTerminal size={14} color="var(--text-muted)" />
                   <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>HTTPS</span>
                 </div>
                 <code style={{ fontSize: 12, color: "var(--text)", fontFamily: "monospace" }}>{cloneUrls.http}</code>
@@ -183,7 +183,17 @@ git push -u origin ${repo.defaultBranch}`}</pre>
 
           {hasCommits && (
             <div className="card" style={{ padding: 16 }}>
-              <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Clone</h3>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                <h3 style={{ fontSize: 13, fontWeight: 600, margin: 0 }}>Clone</h3>
+                <a
+                  href={`/api/repos/${username}/${repoName}/archive?ref=${encodeURIComponent(repo.defaultBranch)}&format=zip`}
+                  className="btn btn-sm"
+                  download
+                  style={{ display: "flex", alignItems: "center", gap: 4, textDecoration: "none", fontSize: 11 }}
+                >
+                  <Download size={11} /> ZIP
+                </a>
+              </div>
               <code style={{ fontSize: 11, wordBreak: "break-all", color: "var(--text)", background: "var(--bg)", display: "block", padding: 10, borderRadius: 6, border: "1px solid var(--border)" }}>
                 {cloneUrls.http}
               </code>

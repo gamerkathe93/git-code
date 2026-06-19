@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
-import { GitPullRequest, GitMerge, XCircle, Plus } from "lucide-react";
+import { GitPullRequestArrow, GitMerge, XCircle, Plus } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { timeAgo } from "@/lib/utils";
@@ -16,7 +16,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 function StateIcon({ state }: { state: string }) {
   if (state === "merged") return <GitMerge size={16} color="#a78bfa" />;
   if (state === "closed") return <XCircle size={16} color="#f87171" />;
-  return <GitPullRequest size={16} color="#22c55e" />;
+  return <GitPullRequestArrow size={16} color="#22c55e" />;
 }
 
 export default async function PullsPage({ params, searchParams }: Params) {
@@ -64,7 +64,7 @@ export default async function PullsPage({ params, searchParams }: Params) {
               color: !showClosed ? "var(--text)" : "var(--text-muted)",
               textDecoration: "none",
             }}>
-              <GitPullRequest size={14} color={!showClosed ? "#22c55e" : "var(--text-muted)"} />
+              <GitPullRequestArrow size={14} color={!showClosed ? "#22c55e" : "var(--text-muted)"} />
               {openCount} Open
             </Link>
             <Link href={`/${username}/${repoName}/pulls?state=closed`} style={{
@@ -84,7 +84,7 @@ export default async function PullsPage({ params, searchParams }: Params) {
 
         {pulls.length === 0 ? (
           <div style={{ padding: 48, textAlign: "center", color: "var(--text-muted)" }}>
-            <GitPullRequest size={32} style={{ marginBottom: 12, opacity: 0.3 }} />
+            <GitPullRequestArrow size={32} style={{ marginBottom: 12, opacity: 0.3 }} />
             <p>{showClosed ? "No closed pull requests" : "No open pull requests"}</p>
           </div>
         ) : (

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Tag, Plus, PackageOpen } from "lucide-react";
+import { Package, Plus, PackageOpen } from "lucide-react";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
@@ -69,7 +69,7 @@ export default async function ReleasesPage({ params }: Params) {
 
                   <div style={{ display: "flex", gap: 16, marginBottom: 16, fontSize: 13 }}>
                     <span style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text-muted)" }}>
-                      <Tag size={13} />
+                      <Package size={13} />
                       <span style={{ fontFamily: "monospace", color: "var(--accent-hover)" }}>{release.tagName}</span>
                     </span>
                     <span style={{ color: "var(--text-muted)" }}>

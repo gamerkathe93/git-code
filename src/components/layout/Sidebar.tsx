@@ -2,9 +2,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard, BookMarked,
-  Compass, Bell, Settings, Users, ChevronRight,
-  Plus, Lock
+  House, FolderGit2,
+  Telescope, Bell, Settings, Users, ChevronRight,
+  Plus, LockKeyhole, Key
 } from "lucide-react";
 
 interface SidebarRepo { name: string; isPrivate: boolean; }
@@ -17,15 +17,16 @@ interface SidebarUser {
 }
 
 const NAV = [
-  { href: "/dashboard",     icon: LayoutDashboard, label: "Dashboard" },
-  { href: "/repositories",  icon: BookMarked,       label: "Repositories" },
-  { href: "/explore",       icon: Compass,          label: "Explore" },
+  { href: "/dashboard",     icon: House,       label: "Dashboard" },
+  { href: "/repositories",  icon: FolderGit2,  label: "Repositories" },
+  { href: "/explore",       icon: Telescope,   label: "Explore" },
   { href: "/notifications", icon: Bell,             label: "Notifications" },
 ];
 
 const SETTINGS_NAV = [
   { href: "/settings",               icon: Settings, label: "Settings" },
   { href: "/settings/organizations", icon: Users,    label: "Organizations" },
+  { href: "/settings/keys",          icon: Key,      label: "SSH Keys" },
 ];
 
 function NavLink({ href, icon: Icon, label, badge, active }: {
@@ -220,12 +221,12 @@ export default function Sidebar({ user }: { user: SidebarUser }) {
                 }
               }}
             >
-              <BookMarked size={12} style={{ flexShrink: 0, opacity: 0.6 }} />
+              <FolderGit2 size={12} style={{ flexShrink: 0, opacity: 0.6 }} />
               <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {repo.name}
               </span>
               {repo.isPrivate && (
-                <Lock size={10} style={{ flexShrink: 0, opacity: 0.45 }} />
+                <LockKeyhole size={10} style={{ flexShrink: 0, opacity: 0.45 }} />
               )}
             </Link>
           );

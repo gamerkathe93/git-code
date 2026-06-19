@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { BookOpen, Plus, Edit, Clock, FileText } from "lucide-react";
+import { BookText, Plus, Edit, Clock, FileText } from "lucide-react";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
@@ -32,7 +32,7 @@ export default async function WikiPage({ params, searchParams }: Params) {
   if (pages.length === 0) {
     return (
       <div className="card" style={{ padding: 48, textAlign: "center" }}>
-        <BookOpen size={40} style={{ margin: "0 auto 16px", opacity: 0.3 }} />
+        <BookText size={40} style={{ margin: "0 auto 16px", opacity: 0.3 }} />
         <p style={{ color: "var(--text-muted)", marginBottom: 12 }}>No wiki pages yet.</p>
         <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 16 }}>
           Create your first wiki page to document this repository.
@@ -48,7 +48,7 @@ export default async function WikiPage({ params, searchParams }: Params) {
       <div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
           <h2 style={{ fontSize: 16, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
-            <BookOpen size={16} /> Wiki{activePage ? ` · ${activePage.title}` : ""}
+            <BookText size={16} /> Wiki{activePage ? ` · ${activePage.title}` : ""}
           </h2>
           <div style={{ display: "flex", gap: 8 }}>
             {activePage && (

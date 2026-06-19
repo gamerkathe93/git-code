@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
-import { GitBranch, GitPullRequest, CircleDot, BookOpen, Tag, Play, Settings, Star, Eye, Lock } from "lucide-react";
+import { GitBranch, GitPullRequestArrow, CircleDot, Code2, BookText, Package, Workflow, Settings2, Star, Eye, LockKeyhole, FolderGit2, Tag, Target, ArrowLeftRight } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { formatNumber } from "@/lib/utils";
 import StarButton from "@/components/repo/StarButton";
+import ForkButton from "@/components/repo/ForkButton";
 
 export default async function RepoLayout({
   children,
@@ -36,6 +37,13 @@ export default async function RepoLayout({
   });
   const isStarred = !!starRecord;
 
+  const userFork = session
+    ? await db.repository.findUnique({
+        where: { ownerId_name: { ownerId: session.userId, name: repoName } },
+      })
+    : null;
+  const alreadyForked = !!userFork && session?.username !== username;
+
   const lastPipeline = await db.pipeline.findFirst({
     where: { repoId: repo.id },
     orderBy: { createdAt: "desc" },
@@ -46,13 +54,17 @@ export default async function RepoLayout({
   };
 
   const tabs = [
-    { href: `/${username}/${repoName}`, label: "Code", icon: <BookOpen size={13} /> },
+    { href: `/${username}/${repoName}`, label: "Code", icon: <Code2 size={13} /> },
     { href: `/${username}/${repoName}/issues`, label: "Issues", icon: <CircleDot size={13} />, count: repo._count.issues },
-    { href: `/${username}/${repoName}/pulls`, label: "Pull Requests", icon: <GitPullRequest size={13} />, count: repo._count.pullRequests },
-    { href: `/${username}/${repoName}/pipelines`, label: "Pipelines", icon: <Play size={13} /> },
-    { href: `/${username}/${repoName}/releases`, label: "Releases", icon: <Tag size={13} /> },
-    { href: `/${username}/${repoName}/wiki`, label: "Wiki", icon: <BookOpen size={13} /> },
-    ...(session.username === username ? [{ href: `/${username}/${repoName}/settings`, label: "Settings", icon: <Settings size={13} /> }] : []),
+    { href: `/${username}/${repoName}/labels`, label: "Labels", icon: <Tag size={13} /> },
+    { href: `/${username}/${repoName}/milestones`, label: "Milestones", icon: <Target size={13} /> },
+    { href: `/${username}/${repoName}/pulls`, label: "Pull Requests", icon: <GitPullRequestArrow size={13} />, count: repo._count.pullRequests },
+    { href: `/${username}/${repoName}/pipelines`, label: "Pipelines", icon: <Workflow size={13} /> },
+    { href: `/${username}/${repoName}/releases`, label: "Releases", icon: <Package size={13} /> },
+    { href: `/${username}/${repoName}/tags`, label: "Tags", icon: <Tag size={13} /> },
+    { href: `/${username}/${repoName}/compare`, label: "Compare", icon: <ArrowLeftRight size={13} /> },
+    { href: `/${username}/${repoName}/wiki`, label: "Wiki", icon: <BookText size={13} /> },
+    ...(session.username === username ? [{ href: `/${username}/${repoName}/settings`, label: "Settings", icon: <Settings2 size={13} /> }] : []),
   ];
 
   return (
@@ -61,7 +73,7 @@ export default async function RepoLayout({
       <div style={{ marginBottom: 0 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <BookOpen size={16} color="var(--text-muted)" />
+            <FolderGit2 size={16} color="var(--text-muted)" />
             <Link href={`/${username}`} style={{ color: "var(--accent)", fontSize: 18, fontWeight: 500 }}>
               {username}
             </Link>
@@ -71,7 +83,7 @@ export default async function RepoLayout({
             </Link>
             {repo.isPrivate && (
               <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, color: "var(--text-muted)", border: "1px solid var(--border)", borderRadius: 20, padding: "1px 8px" }}>
-                <Lock size={10} /> Private
+                <LockKeyhole size={10} /> Private
               </span>
             )}
             {lastPipeline && (
@@ -83,7 +95,12 @@ export default async function RepoLayout({
           <div style={{ display: "flex", gap: 6 }}>
             <button className="btn btn-sm"><Eye size={12} /> Watch</button>
             <StarButton username={username} repo={repoName} initialCount={repo._count.stars} initialStarred={isStarred} />
-            <button className="btn btn-sm"><GitBranch size={12} /> Fork</button>
+            <ForkButton
+              username={username}
+              repo={repoName}
+              initialCount={repo.forksCount}
+              currentUserFork={alreadyForked ? session?.username : null}
+            />
           </div>
         </div>
 

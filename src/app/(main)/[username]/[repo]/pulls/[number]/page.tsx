@@ -1,17 +1,28 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
-import { GitPullRequest, GitMerge, XCircle } from "lucide-react";
+import { GitPullRequest, GitMerge, XCircle, Tag } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { timeAgo } from "@/lib/utils";
 import PRActions from "@/components/repo/PRActions";
+import PRTabNav from "@/components/repo/PRTabNav";
+import ReviewerManager from "@/components/pulls/ReviewerManager";
 
 type Params = { params: Promise<{ username: string; repo: string; number: string }> };
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { username, repo, number } = await params;
   return { title: `PR #${number} · ${username}/${repo}` };
+}
+
+function getTextColor(bg: string): string {
+  const hex = bg.replace("#", "");
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? "#000000" : "#ffffff";
 }
 
 export default async function PullRequestDetailPage({ params }: Params) {
@@ -28,25 +39,81 @@ export default async function PullRequestDetailPage({ params }: Params) {
   });
   if (!repo) notFound();
 
-  const pr = await db.pullRequest.findUnique({
+  const pr = await (db as any).pullRequest.findUnique({
     where: { repoId_number: { repoId: repo.id, number: parseInt(number) } },
     include: {
       author: { select: { username: true, name: true, avatarUrl: true } },
-      comments: {
-        include: { author: { select: { username: true, name: true, avatarUrl: true } } },
+      reviewers: {
+        include: {
+          reviewer: { select: { id: true, username: true, name: true, avatarUrl: true } },
+        },
         orderBy: { createdAt: "asc" },
       },
+      labels: {
+        include: {
+          label: { select: { id: true, name: true, color: true, description: true } },
+        },
+      },
     },
-  });
+  }) as {
+    id: string; number: number; title: string; body: string; state: string;
+    headBranch: string; baseBranch: string; isDraft: boolean;
+    createdAt: Date; updatedAt: Date; closedAt: Date | null; mergedAt: Date | null;
+    repoId: string; authorId: string;
+    author: { username: string; name: string | null; avatarUrl: string | null };
+    reviewers: Array<{
+      id: string; pullRequestId: string; reviewerId: string; state: string; body: string;
+      createdAt: Date; updatedAt: Date;
+      reviewer: { id: string; username: string; name: string | null; avatarUrl: string | null };
+    }>;
+    labels: Array<{
+      pullRequestId: string; labelId: string;
+      label: { id: string; name: string; color: string; description: string | null };
+    }>;
+  } | null;
   if (!pr) notFound();
+
+  // Fetch only non-inline (conversation) comments separately
+  // Cast through any to avoid stale Prisma client type issue when schema has path field
+  const rawComments = await (db as any).comment.findMany({
+    where: { pullRequestId: pr.id, path: null },
+    include: { author: { select: { username: true, name: true, avatarUrl: true } } },
+    orderBy: { createdAt: "asc" },
+  }) as Array<{
+    id: string;
+    body: string;
+    createdAt: Date;
+    author: { username: string; name: string | null; avatarUrl: string | null };
+  }>;
 
   const stateColor = pr.state === "merged" ? "#a371f7" : pr.state === "closed" ? "#f85149" : "#3fb950";
   const StateIcon = pr.state === "merged" ? GitMerge : pr.state === "closed" ? XCircle : GitPullRequest;
 
+  const isOwner = session.username === username;
+
+  // Serialize reviewers for client component
+  const reviewersSerialized = pr.reviewers.map((r) => ({
+    id: r.id,
+    pullRequestId: r.pullRequestId,
+    reviewerId: r.reviewerId,
+    state: r.state,
+    body: r.body,
+    createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt.toISOString(),
+    reviewer: {
+      id: r.reviewer.id,
+      username: r.reviewer.username,
+      name: r.reviewer.name,
+      avatarUrl: r.reviewer.avatarUrl,
+    },
+  }));
+
+  const prLabels = pr.labels.map((pl) => pl.label);
+
   return (
     <div style={{ maxWidth: 900, margin: "0 auto" }}>
       {/* Header */}
-      <div style={{ marginBottom: 20 }}>
+      <div style={{ marginBottom: 16 }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8, lineHeight: 1.3 }}>
           {pr.title} <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>#{pr.number}</span>
         </h1>
@@ -63,6 +130,9 @@ export default async function PullRequestDetailPage({ params }: Params) {
         </div>
       </div>
 
+      {/* Tab nav */}
+      <PRTabNav username={username} repo={repoName} number={number} activePath="conversation" />
+
       <div style={{ display: "grid", gridTemplateColumns: "1fr 240px", gap: 24 }}>
         <div>
           {/* Description */}
@@ -72,10 +142,14 @@ export default async function PullRequestDetailPage({ params }: Params) {
             </div>
           )}
 
-          {/* Comments */}
-          {(pr.comments as any[]).map((comment: any) => (
+          {/* Conversation comments (non-inline only) */}
+          {rawComments.map((comment) => (
             <div key={comment.id} style={{ display: "flex", gap: 12, marginBottom: 16 }}>
-              <img src={comment.author.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${comment.author.username}`} alt="" style={{ width: 40, height: 40, borderRadius: "50%", border: "1px solid var(--border)", flexShrink: 0 }} />
+              <img
+                src={comment.author.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${comment.author.username}`}
+                alt=""
+                style={{ width: 40, height: 40, borderRadius: "50%", border: "1px solid var(--border)", flexShrink: 0 }}
+              />
               <div className="card" style={{ flex: 1 }}>
                 <div style={{ padding: "10px 16px", background: "var(--bg-secondary)", borderBottom: "1px solid var(--border)" }}>
                   <Link href={`/${comment.author.username}`} style={{ fontWeight: 600, fontSize: 13 }}>{comment.author.username}</Link>
@@ -94,7 +168,7 @@ export default async function PullRequestDetailPage({ params }: Params) {
             repo={repoName}
             number={pr.number}
             state={pr.state}
-            isOwner={session.username === username}
+            isOwner={isOwner}
             isAuthor={session.userId === pr.authorId}
           />
         </div>
@@ -108,9 +182,47 @@ export default async function PullRequestDetailPage({ params }: Params) {
               <span style={{ fontSize: 13 }}>{pr.author.username}</span>
             </Link>
           </div>
+
+          {/* Reviewers */}
+          <div style={{ borderBottom: "1px solid var(--border)", paddingBottom: 16 }}>
+            <ReviewerManager
+              reviewers={reviewersSerialized}
+              pullNumber={pr.number}
+              owner={username}
+              repo={repoName}
+              isOwner={isOwner}
+              currentUserId={session.userId}
+            />
+          </div>
+
+          {/* Labels */}
           <div>
             <h3 style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Labels</h3>
-            <span style={{ fontSize: 12, color: "var(--text-subtle)" }}>None yet</span>
+            {prLabels.length === 0 ? (
+              <span style={{ fontSize: 12, color: "var(--text-subtle)" }}>None yet</span>
+            ) : (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                {prLabels.map((label) => (
+                  <span
+                    key={label.id}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 3,
+                      background: label.color,
+                      color: getTextColor(label.color),
+                      borderRadius: 12,
+                      padding: "2px 8px",
+                      fontSize: 11,
+                      fontWeight: 600,
+                    }}
+                    title={label.description ?? ""}
+                  >
+                    <Tag size={9} /> {label.name}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { GitBranch, GitPullRequest, CircleDot, Star, Lock, BookOpen, Plus, Bell } from "lucide-react";
+import { GitBranch, GitPullRequestArrow, CircleDot, Star, Lock, FolderGit2, Plus, Bell } from "lucide-react";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -48,8 +48,8 @@ export default async function DashboardPage() {
   const starredIds = new Set(userStars.map((s: { repoId: string }) => s.repoId));
 
   const stats = [
-    { label: "Repositories", value: myRepos.length, icon: <BookOpen size={16} />, href: "/repositories", color: "#3b82f6", glow: "rgba(59,130,246,0.15)" },
-    { label: "Open PRs", value: openPRs, icon: <GitPullRequest size={16} />, href: "/dashboard", color: "#22c55e", glow: "rgba(34,197,94,0.15)" },
+    { label: "Repositories", value: myRepos.length, icon: <FolderGit2 size={16} />, href: "/repositories", color: "#3b82f6", glow: "rgba(59,130,246,0.15)" },
+    { label: "Open PRs", value: openPRs, icon: <GitPullRequestArrow size={16} />, href: "/dashboard", color: "#22c55e", glow: "rgba(34,197,94,0.15)" },
     { label: "Open Issues", value: openIssues, icon: <CircleDot size={16} />, href: "/dashboard", color: "#f59e0b", glow: "rgba(245,158,11,0.15)" },
     { label: "Notifications", value: unreadNotifs, icon: <Bell size={16} />, href: "/notifications", color: "#f87171", glow: "rgba(248,113,113,0.15)" },
   ];
@@ -105,7 +105,7 @@ export default async function DashboardPage() {
             </div>
             {myRepos.length === 0 ? (
               <div className="card" style={{ padding: 32, textAlign: "center", color: "var(--text-muted)" }}>
-                <BookOpen size={32} style={{ marginBottom: 12, opacity: 0.4 }} />
+                <FolderGit2 size={32} style={{ marginBottom: 12, opacity: 0.4 }} />
                 <p style={{ marginBottom: 12 }}>You don&apos;t have any repositories yet.</p>
                 <Link href="/new" className="btn btn-primary btn-sm">Create your first repo</Link>
               </div>
