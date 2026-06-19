@@ -61,6 +61,11 @@ function runGitBackend(
   const service = req.nextUrl.searchParams.get("service") ?? "";
   const pathStr = gitpath.join("/");
 
+  // When a reverse proxy (Railway, nginx, etc.) uses chunked transfer encoding,
+  // Content-Length is absent. Setting it to "0" tells git http-backend to read
+  // zero bytes and it hangs up immediately. Leave it unset so git reads until EOF.
+  const contentLength = req.headers.get("content-length");
+
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     GIT_PROJECT_ROOT: REPO_BASE,
@@ -69,7 +74,7 @@ function runGitBackend(
     PATH_INFO: `/${pathStr}`,
     REQUEST_METHOD: req.method,
     CONTENT_TYPE: req.headers.get("content-type") ?? "",
-    CONTENT_LENGTH: req.headers.get("content-length") ?? "0",
+    ...(contentLength !== null ? { CONTENT_LENGTH: contentLength } : {}),
     QUERY_STRING: service
       ? `service=${service}`
       : req.nextUrl.search.slice(1) || "",
