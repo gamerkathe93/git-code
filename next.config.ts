@@ -4,9 +4,9 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: process.cwd(),
   },
-  // Allow large git push bodies through middleware (git-receive-pack can be hundreds of MB)
+  // Allow large git push bodies (git-receive-pack can be hundreds of MB)
   experimental: {
-    middlewareClientMaxBodySize: 500 * 1024 * 1024, // 500MB
+    proxyClientMaxBodySize: 500 * 1024 * 1024, // 500MB
   },
 };
 
