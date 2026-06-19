@@ -1,0 +1,274 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  email        String   @unique
+  passwordHash String
+  name         String
+  bio          String   @default("")
+  avatarUrl    String   @default("")
+  website      String   @default("")
+  company      String   @default("")
+  location     String   @default("")
+  isAdmin      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  repositories  Repository[]
+  issues        Issue[]        @relation("IssueAuthor")
+  pullRequests  PullRequest[]  @relation("PRAuthor")
+  comments      Comment[]
+  stars         Star[]
+  notifications Notification[]
+  pipelines      Pipeline[]
+  organizations    Organization[]
+  orgMemberships   OrgMember[]
+  issueAssignments IssueAssignee[] @relation("IssueAssignee")
+}
+
+model Repository {
+  id            String   @id @default(cuid())
+  name          String
+  description   String   @default("")
+  isPrivate     Boolean  @default(false)
+  defaultBranch String   @default("main")
+  language      String   @default("")
+  topics        String   @default("") // JSON array
+  license       String   @default("")
+  hasIssues     Boolean  @default(true)
+  hasWiki       Boolean  @default(true)
+  forksCount    Int      @default(0)
+  starsCount    Int      @default(0)
+  watchersCount Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  pushedAt      DateTime @default(now())
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  issues       Issue[]
+  pullRequests PullRequest[]
+  labels       Label[]
+  milestones   Milestone[]
+  stars        Star[]
+  pipelines    Pipeline[]
+  webhooks     Webhook[]
+
+  @@unique([ownerId, name])
+}
+
+model Issue {
+  id        String   @id @default(cuid())
+  number    Int
+  title     String
+  body      String   @default("")
+  state     String   @default("open") // open | closed
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  closedAt  DateTime?
+
+  repoId   String
+  repo     Repository @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  authorId String
+  author   User       @relation("IssueAuthor", fields: [authorId], references: [id])
+
+  milestoneId String?
+  milestone   Milestone? @relation(fields: [milestoneId], references: [id])
+
+  labels    IssueLabel[]
+  assignees IssueAssignee[]
+  comments  Comment[]
+
+  @@unique([repoId, number])
+}
+
+model IssueLabel {
+  issueId String
+  labelId String
+  issue   Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  label   Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([issueId, labelId])
+}
+
+model IssueAssignee {
+  issueId    String
+  assigneeId String
+  issue      Issue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  assignee   User   @relation("IssueAssignee", fields: [assigneeId], references: [id], onDelete: Cascade)
+
+  @@id([issueId, assigneeId])
+}
+
+model PullRequest {
+  id          String    @id @default(cuid())
+  number      Int
+  title       String
+  body        String    @default("")
+  state       String    @default("open") // open | closed | merged
+  headBranch  String
+  baseBranch  String
+  isDraft     Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  closedAt    DateTime?
+  mergedAt    DateTime?
+
+  repoId   String
+  repo     Repository @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  authorId String
+  author   User       @relation("PRAuthor", fields: [authorId], references: [id])
+
+  comments Comment[]
+
+  @@unique([repoId, number])
+}
+
+model Label {
+  id          String @id @default(cuid())
+  name        String
+  color       String
+  description String @default("")
+
+  repoId String
+  repo   Repository @relation(fields: [repoId], references: [id], onDelete: Cascade)
+
+  issues IssueLabel[]
+
+  @@unique([repoId, name])
+}
+
+model Milestone {
+  id          String    @id @default(cuid())
+  title       String
+  description String    @default("")
+  dueDate     DateTime?
+  state       String    @default("open")
+  closedAt    DateTime?
+  createdAt   DateTime  @default(now())
+
+  repoId String
+  repo   Repository @relation(fields: [repoId], references: [id], onDelete: Cascade)
+
+  issues Issue[]
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id])
+
+  issueId       String?
+  issue         Issue?       @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  pullRequestId String?
+  pullRequest   PullRequest? @relation(fields: [pullRequestId], references: [id], onDelete: Cascade)
+}
+
+model Star {
+  userId    String
+  repoId    String
+  createdAt DateTime @default(now())
+
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repo Repository @relation(fields: [repoId], references: [id], onDelete: Cascade)
+
+  @@id([userId, repoId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  type      String   // mention | review_request | push | issue | pull_request | pipeline
+  title     String
+  body      String   @default("")
+  isRead    Boolean  @default(false)
+  url       String   @default("")
+  createdAt DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Pipeline {
+  id        String   @id @default(cuid())
+  status    String   @default("pending") // pending | running | success | failed | canceled
+  branch    String
+  commitSha String   @default("")
+  commitMsg String   @default("")
+  source    String   @default("push") // push | manual | schedule | api
+  duration  Int      @default(0) // seconds
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  repoId    String
+  repo      Repository @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  triggerId String?
+  trigger   User?      @relation(fields: [triggerId], references: [id])
+
+  jobs PipelineJob[]
+}
+
+model PipelineJob {
+  id        String   @id @default(cuid())
+  name      String
+  stage     String
+  status    String   @default("pending")
+  logs      String   @default("")
+  duration  Int      @default(0)
+  startedAt DateTime?
+  finishedAt DateTime?
+
+  pipelineId String
+  pipeline   Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+}
+
+model Webhook {
+  id        String   @id @default(cuid())
+  url       String
+  secret    String   @default("")
+  events    String   @default("push") // JSON array
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  repoId String
+  repo   Repository @relation(fields: [repoId], references: [id], onDelete: Cascade)
+}
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  displayName String
+  description String   @default("")
+  avatarUrl   String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  members OrgMember[]
+}
+
+model OrgMember {
+  role      String   @default("member") // owner | member
+  joinedAt  DateTime @default(now())
+
+  userId String
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orgId  String
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@id([userId, orgId])
+}
