@@ -39,12 +39,17 @@ function requireAuth(): Response {
 }
 
 function findHeaderEnd(buf: Buffer): number {
+  for (let i = 0; i < buf.length - 3; i++) {
+    if (buf[i] === 0x0d && buf[i + 1] === 0x0a && buf[i + 2] === 0x0d && buf[i + 3] === 0x0a) return i + 4;
+  }
   for (let i = 0; i < buf.length - 1; i++) {
-    if (buf[i] === 0x0d && buf[i + 1] === 0x0a && i + 3 < buf.length &&
-        buf[i + 2] === 0x0d && buf[i + 3] === 0x0a) return i + 4;
     if (buf[i] === 0x0a && buf[i + 1] === 0x0a) return i + 2;
   }
   return -1;
+}
+
+function isEpipe(e: unknown): boolean {
+  return (e as NodeJS.ErrnoException)?.code === "EPIPE";
 }
 
 function runGitBackend(
@@ -72,7 +77,15 @@ function runGitBackend(
   return new Promise((resolve) => {
     const proc = spawn("git", ["http-backend"], { env });
 
-    // Stream request body directly to git stdin — avoids buffering large pushes
+    // Suppress EPIPE on stdin/stdout — git closes its end when done, which is normal
+    proc.stdin.on("error", (e: NodeJS.ErrnoException) => {
+      if (!isEpipe(e)) console.error("git stdin error:", e.message);
+    });
+    proc.stdout.on("error", (e: NodeJS.ErrnoException) => {
+      if (!isEpipe(e)) console.error("git stdout error:", e.message);
+    });
+
+    // Stream request body to git stdin without buffering the whole thing
     if (req.body && req.method === "POST") {
       const reader = req.body.getReader();
       (async () => {
@@ -80,20 +93,23 @@ function runGitBackend(
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            proc.stdin.write(Buffer.from(value));
+            // Respect backpressure: wait for drain if write returns false
+            const ok = proc.stdin.write(Buffer.from(value));
+            if (!ok) {
+              await new Promise<void>((res) => proc.stdin.once("drain", res));
+            }
           }
         } catch (e) {
-          console.error("stdin pump error:", e);
+          if (!isEpipe(e)) console.error("stdin pump error:", e);
         } finally {
-          proc.stdin.end();
+          try { proc.stdin.end(); } catch { /* already closed */ }
         }
       })();
     } else {
       proc.stdin.end();
     }
 
-    // Buffer stdout until headers are fully received, then stream the rest
-    // This lets git send-pack receive sideband packets in real-time
+    // Buffer stdout until headers are complete, then stream body in real-time
     const headerChunks: Buffer[] = [];
     let headersParsed = false;
     let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
@@ -102,11 +118,15 @@ function runGitBackend(
       start(controller) {
         streamController = controller;
       },
+      cancel() {
+        // Client disconnected — kill the git process
+        try { proc.kill(); } catch { /* already gone */ }
+      },
     });
 
     proc.stdout.on("data", (chunk: Buffer) => {
       if (headersParsed) {
-        streamController?.enqueue(new Uint8Array(chunk));
+        try { streamController?.enqueue(new Uint8Array(chunk)); } catch { /* stream closed */ }
         return;
       }
 
@@ -116,7 +136,7 @@ function runGitBackend(
 
       if (headerEnd !== -1) {
         headersParsed = true;
-        const headerStr = combined.slice(0, headerEnd - (combined[headerEnd - 4] === 0x0d ? 4 : 2)).toString("utf-8");
+        const headerStr = combined.slice(0, headerEnd).toString("utf-8");
         const remaining = combined.slice(headerEnd);
 
         let status = 200;
@@ -137,29 +157,28 @@ function runGitBackend(
           }
         }
 
-        // Enqueue any body bytes already received after headers
         if (remaining.length > 0) {
-          streamController?.enqueue(new Uint8Array(remaining));
+          try { streamController?.enqueue(new Uint8Array(remaining)); } catch { /* stream closed */ }
         }
 
-        // Resolve immediately so client starts receiving data
         resolve(new Response(body, { status, headers }));
       }
     });
 
     proc.stdout.on("end", () => {
-      streamController?.close();
+      try { streamController?.close(); } catch { /* already closed */ }
     });
 
     proc.stderr.on("data", (d: Buffer) => {
-      console.error("git http-backend:", d.toString());
+      console.error("git http-backend:", d.toString().trimEnd());
     });
 
     proc.on("error", (err) => {
       console.error("git spawn error:", err);
-      streamController?.error(err);
       if (!headersParsed) {
         resolve(new Response("git not available", { status: 500 }));
+      } else {
+        try { streamController?.error(err); } catch { /* already closed */ }
       }
     });
 
@@ -167,6 +186,7 @@ function runGitBackend(
       if (!headersParsed) {
         resolve(new Response(`git exited with code ${code}`, { status: 500 }));
       }
+      // Stream is closed by stdout 'end' event above
     });
   });
 }
