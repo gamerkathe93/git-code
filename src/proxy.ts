@@ -48,5 +48,7 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Exclude /git/ from matching — body is buffered before the function runs,
+  // which hits the 10MB cap on large git pushes. The git route handles its own auth.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|git/).*)"],
 };
