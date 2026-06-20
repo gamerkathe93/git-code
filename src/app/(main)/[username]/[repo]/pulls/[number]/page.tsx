@@ -11,6 +11,8 @@ import ReviewerManager from "@/components/pulls/ReviewerManager";
 import DraftToggleButton from "@/components/pulls/DraftToggleButton";
 import Markdown from "@/components/ui/Markdown";
 import ReactionBar from "@/components/ui/ReactionBar";
+import AIReviewPanel from "@/components/pulls/AIReviewPanel";
+import PresenceIndicator from "@/components/ui/PresenceIndicator";
 
 type Params = { params: Promise<{ username: string; repo: string; number: string }> };
 
@@ -161,6 +163,7 @@ export default async function PullRequestDetailPage({ params }: Params) {
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: stateColor, background: stateColor + "22", border: `1px solid ${stateColor}44`, borderRadius: 20, padding: "3px 12px" }}>
             <StateIcon size={13} /> {pr.state}
           </span>
+          <PresenceIndicator pageKey={`${username}/${repoName}/pulls/${pr.number}`} />
           {pr.isDraft && (
             <span style={{ display: "inline-flex", alignItems: "center", fontSize: 12, color: "var(--text-muted)", background: "var(--bg-secondary)", border: "1px solid var(--border)", borderRadius: 20, padding: "2px 10px" }}>
               Draft
@@ -183,6 +186,9 @@ export default async function PullRequestDetailPage({ params }: Params) {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 240px", gap: 24 }}>
         <div>
+          {/* AI Code Review Panel */}
+          <AIReviewPanel owner={username} repo={repoName} prNumber={pr.number} />
+
           {/* Description */}
           {pr.body && (
             <div className="card" style={{ padding: 20, marginBottom: 16 }}>

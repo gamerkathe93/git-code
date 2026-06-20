@@ -3,15 +3,22 @@ import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  GitBranch, Bell, Plus, Search, ChevronDown,
-  CircleUser, Settings2, LogOut, FolderGit2, User, Zap
+  GitBranch, Bell, Plus, ChevronDown,
+  CircleUser, Settings2, LogOut, FolderGit2, User
 } from "lucide-react";
+import CommandPaletteWrapper from "@/components/layout/CommandPaletteWrapper";
+
+interface NavbarRepo {
+  name: string;
+  owner: string;
+}
 
 interface NavbarUser {
   username: string;
   name: string;
   avatarUrl: string;
   unreadCount: number;
+  repos?: NavbarRepo[];
 }
 
 export default function Navbar({ user }: { user: NavbarUser }) {
@@ -58,40 +65,10 @@ export default function Navbar({ user }: { user: NavbarUser }) {
         <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: "-0.02em" }}>GitCode</span>
       </Link>
 
-      {/* Search */}
-      <form action="/search" method="GET" style={{ flex: 1, maxWidth: 440, position: "relative" }}>
-        <Search size={13} style={{
-          position: "absolute", left: 10, top: "50%",
-          transform: "translateY(-50%)", color: "var(--text-subtle)", pointerEvents: "none",
-        }} />
-        <input
-          name="q"
-          placeholder="Search repos, issues, users…"
-          style={{
-            paddingLeft: 32, paddingRight: 36,
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid var(--border)",
-            borderRadius: 8, width: "100%", fontSize: 13,
-            transition: "all 0.18s ease",
-          }}
-          onFocus={(e) => {
-            e.currentTarget.style.borderColor = "var(--accent)";
-            e.currentTarget.style.background = "rgba(59,130,246,0.06)";
-            e.currentTarget.style.boxShadow = "0 0 0 3px var(--accent-subtle)";
-          }}
-          onBlur={(e) => {
-            e.currentTarget.style.borderColor = "var(--border)";
-            e.currentTarget.style.background = "rgba(255,255,255,0.04)";
-            e.currentTarget.style.boxShadow = "none";
-          }}
-        />
-        <span style={{
-          position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)",
-          color: "var(--text-subtle)", fontSize: 10, fontWeight: 600,
-          border: "1px solid var(--border)", borderRadius: 4, padding: "1px 5px",
-          letterSpacing: "0.04em",
-        }}>/</span>
-      </form>
+      {/* Command Palette */}
+      <div style={{ flex: 1, maxWidth: 440 }}>
+        <CommandPaletteWrapper username={user.username} repos={user.repos} />
+      </div>
 
       <nav style={{ display: "flex", alignItems: "center", gap: 3, marginLeft: "auto" }}>
         {[

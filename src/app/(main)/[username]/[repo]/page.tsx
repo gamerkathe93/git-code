@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { getTree, getCommits, getFileContent, hasAnyCommit, getCloneUrls } from "@/lib/git";
 import { timeAgo, getLanguageColor } from "@/lib/utils";
 import Markdown from "@/components/ui/Markdown";
+import HealthScore from "@/components/repo/HealthScore";
 
 type Params = { params: Promise<{ username: string; repo: string }> };
 
@@ -145,6 +146,7 @@ git push -u origin ${repo.defaultBranch}`}</pre>
 
         {/* Sidebar */}
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <HealthScore owner={username} repo={repoName} />
           <div className="card" style={{ padding: 16 }}>
             <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>About</h3>
             {repo.description && (

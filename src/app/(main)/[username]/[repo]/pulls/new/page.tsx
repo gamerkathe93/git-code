@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
-import { GitPullRequest, ArrowLeft, GitBranch } from "lucide-react";
+import { GitPullRequest, ArrowLeft, GitBranch, Sparkles, Loader } from "lucide-react";
 
 export default function NewPullRequestPage() {
   const router = useRouter();
@@ -19,6 +19,31 @@ export default function NewPullRequestPage() {
   const [branches, setBranches] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+
+  async function generateWithAI() {
+    if (!headBranch || !baseBranch || headBranch === baseBranch) {
+      setError("Select two different branches before generating with AI");
+      return;
+    }
+    setAiLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/repos/${username}/${repoName}/pulls/ai-description`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ baseBranch, headBranch }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "AI generation failed");
+      if (data.title) setTitle(data.title);
+      if (data.body) setBody(data.body);
+    } catch (e: any) {
+      setError(e.message || "AI generation failed");
+    } finally {
+      setAiLoading(false);
+    }
+  }
 
   useEffect(() => {
     fetch(`/api/repos/${username}/${repoName}/branches`)
@@ -121,9 +146,31 @@ export default function NewPullRequestPage() {
         {/* PR form */}
         <div className="card" style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
           <div>
-            <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 7, letterSpacing: "0.04em", textTransform: "uppercase" }}>
-              Title
-            </label>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 7 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+                Title
+              </label>
+              <button
+                type="button"
+                onClick={generateWithAI}
+                disabled={aiLoading}
+                style={{
+                  background: "rgba(167,139,250,0.15)",
+                  border: "1px solid rgba(167,139,250,0.4)",
+                  color: "#a78bfa",
+                  fontSize: 12,
+                  padding: "4px 10px",
+                  borderRadius: 6,
+                  cursor: aiLoading ? "not-allowed" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 5,
+                }}
+              >
+                {aiLoading ? <Loader size={11} style={{ animation: "spin 1s linear infinite" }} /> : <Sparkles size={11} />}
+                {aiLoading ? "Generating…" : "Generate with AI"}
+              </button>
+            </div>
             <input
               value={title}
               onChange={e => setTitle(e.target.value)}
@@ -160,6 +207,7 @@ export default function NewPullRequestPage() {
           </label>
         </div>
 
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <Link href={`/${username}/${repoName}/pulls`} className="btn">
             Cancel

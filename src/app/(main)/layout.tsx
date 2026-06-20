@@ -19,15 +19,18 @@ export default async function MainLayout({ children }: { children: React.ReactNo
   const repos = await db.repository.findMany({
     where: { ownerId: user.id },
     orderBy: { updatedAt: "desc" },
-    take: 5,
+    take: 10,
     select: { name: true, isPrivate: true },
   });
+
+  const navRepos = repos.map(r => ({ name: r.name, owner: user.username }));
 
   const navUser = {
     username: user.username,
     name: user.name,
     avatarUrl: user.avatarUrl,
     unreadCount,
+    repos: navRepos,
   };
 
   const sidebarUser = {

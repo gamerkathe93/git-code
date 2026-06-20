@@ -6,8 +6,10 @@ import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { timeAgo } from "@/lib/utils";
 import IssueCommentForm from "@/components/issues/IssueCommentForm";
+import AITriagePanel from "@/components/issues/AITriagePanel";
 import Markdown from "@/components/ui/Markdown";
 import ReactionBar from "@/components/ui/ReactionBar";
+import PresenceIndicator from "@/components/ui/PresenceIndicator";
 
 type Params = { params: Promise<{ username: string; repo: string; number: string }> };
 
@@ -75,6 +77,7 @@ export default async function IssueDetailPage({ params }: Params) {
             {issue.state === "open" ? <CircleDot size={12} /> : <CheckCircle2 size={12} />}
             {issue.state}
           </span>
+          <PresenceIndicator pageKey={`${username}/${repoName}/issues/${issue.number}`} />
           <span style={{ color: "var(--text-muted)", fontSize: 13 }}>
             <Link href={`/${issue.author.username}`} style={{ fontWeight: 600 }}>{issue.author.username}</Link>
             {" "}opened this issue {timeAgo(issue.createdAt.toISOString())} · {issue.comments.length} comment{issue.comments.length !== 1 ? "s" : ""}
@@ -163,6 +166,8 @@ export default async function IssueDetailPage({ params }: Params) {
               <span style={{ fontSize: 12, color: "var(--text-subtle)" }}>None yet</span>
             )}
           </div>
+
+          <AITriagePanel owner={username} repo={repoName} issueId={issue.id} />
 
           {issue.milestone && (
             <div style={{ borderBottom: "1px solid var(--border)", paddingBottom: 16 }}>

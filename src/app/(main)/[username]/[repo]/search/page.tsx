@@ -2,31 +2,38 @@
 import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Search, FileCode2, GitCommit, CircleDot } from "lucide-react";
+import { Search, FileCode2, GitCommit, CircleDot, Sparkles } from "lucide-react";
 
 function SearchContent({ username, repo }: { username: string; repo: string }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [q, setQ] = useState(searchParams.get("q") || "");
-  const [type, setType] = useState(searchParams.get("type") || "code");
+  const [type, setType] = useState(searchParams.get("type") || "ai");
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [aiTerms, setAiTerms] = useState<string[]>([]);
 
   const search = useCallback(async (query: string, searchType: string) => {
-    if (!query.trim()) { setResults([]); return; }
+    if (!query.trim()) { setResults([]); setAiTerms([]); return; }
     setLoading(true);
     const res = await fetch(`/api/repos/${username}/${repo}/search?q=${encodeURIComponent(query)}&type=${searchType}`);
     const data = await res.json();
     setResults(data.results || []);
+    if (searchType === "ai" && data.searchTerms) {
+      setAiTerms(data.searchTerms);
+    } else {
+      setAiTerms([]);
+    }
     setLoading(false);
   }, [username, repo]);
 
   useEffect(() => {
-    const timer = setTimeout(() => { if (q) search(q, type); else setResults([]); }, 300);
+    const timer = setTimeout(() => { if (q) search(q, type); else { setResults([]); setAiTerms([]); } }, 300);
     return () => clearTimeout(timer);
   }, [q, type, search]);
 
   const tabs = [
+    { id: "ai", label: "AI Search", icon: <Sparkles size={13} /> },
     { id: "code", label: "Code", icon: <FileCode2 size={13} /> },
     { id: "commits", label: "Commits", icon: <GitCommit size={13} /> },
     { id: "issues", label: "Issues", icon: <CircleDot size={13} /> },
@@ -66,9 +73,44 @@ function SearchContent({ username, repo }: { username: string; repo: string }) {
 
       {/* Results */}
       {loading && <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)" }}>Searching…</div>}
-      {!loading && q && results.length === 0 && (
+
+      {/* AI search terms chips */}
+      {type === "ai" && aiTerms.length > 0 && (
+        <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Searching for:</span>
+          {aiTerms.map(t => (
+            <span key={t} style={{ fontSize: 11, padding: "1px 8px", borderRadius: 10, background: "rgba(167,139,250,0.12)", color: "#a78bfa", border: "1px solid rgba(167,139,250,0.3)" }}>{t}</span>
+          ))}
+        </div>
+      )}
+
+      {!loading && q && results.length === 0 && type !== "ai" && (
         <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>No results for "{q}"</div>
       )}
+      {type === "ai" && !loading && q && results.length === 0 && (
+        <div className="card" style={{ padding: 20, textAlign: "center" }}>
+          <Sparkles size={24} color="#a78bfa" style={{ marginBottom: 8 }} />
+          <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>AI Search</p>
+          <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
+            Set <code>ANTHROPIC_API_KEY</code> in your Railway environment variables to enable natural language search.
+          </p>
+        </div>
+      )}
+      {!loading && type === "ai" && results.map((r: any, i: number) => (
+        <div key={i} className="card" style={{ padding: 0, marginBottom: 8, overflow: "hidden" }}>
+          <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)", background: "rgba(167,139,250,0.08)", display: "flex", alignItems: "center", gap: 8 }}>
+            <Sparkles size={12} color="#a78bfa" />
+            <Link href={`/${username}/${repo}/blob/HEAD/${r.file}`} style={{ fontSize: 13, color: "#a78bfa", flex: 1 }}>
+              {r.file}
+            </Link>
+            <span style={{ fontSize: 10, color: "var(--text-muted)" }}>line {r.line} · {r.score} match{r.score !== 1 ? "es" : ""}</span>
+          </div>
+          <pre style={{ margin: 0, padding: "10px 12px", fontSize: 12, fontFamily: "monospace", overflowX: "auto", lineHeight: 1.6 }}>
+            <span style={{ color: "var(--text-muted)", marginRight: 16, userSelect: "none" }}>{r.line}</span>
+            {r.content}
+          </pre>
+        </div>
+      ))}
       {!loading && type === "code" && results.map((r: any, i: number) => (
         <div key={i} className="card" style={{ padding: 0, marginBottom: 8, overflow: "hidden" }}>
           <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)", background: "var(--bg-secondary)" }}>

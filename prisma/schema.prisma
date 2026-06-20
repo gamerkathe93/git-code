@@ -41,6 +41,7 @@ model User {
   accessTokens  PersonalAccessToken[]
   sshKeys       SSHKey[]
   reactions     Reaction[]
+  presence      Presence[]
 }
 
 model Repository {
@@ -79,14 +80,15 @@ model Repository {
 }
 
 model Issue {
-  id        String   @id @default(cuid())
-  number    Int
-  title     String
-  body      String   @default("")
-  state     String   @default("open") // open | closed
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  closedAt  DateTime?
+  id           String   @id @default(cuid())
+  number       Int
+  title        String
+  body         String   @default("")
+  state        String   @default("open") // open | closed
+  kanbanColumn String   @default("backlog") // backlog | todo | in_progress | in_review | done
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  closedAt     DateTime?
 
   repoId   String
   repo     Repository @relation(fields: [repoId], references: [id], onDelete: Cascade)
@@ -258,6 +260,16 @@ model Notification {
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Presence {
+  id       String   @id @default(cuid())
+  pageKey  String   // e.g. "owner/repo/pulls/1" or "owner/repo/issues/5"
+  lastSeen DateTime @default(now())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, pageKey])
 }
 
 model Pipeline {
