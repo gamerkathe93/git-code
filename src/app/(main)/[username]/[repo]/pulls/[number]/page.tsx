@@ -8,7 +8,9 @@ import { timeAgo } from "@/lib/utils";
 import PRActions from "@/components/repo/PRActions";
 import PRTabNav from "@/components/repo/PRTabNav";
 import ReviewerManager from "@/components/pulls/ReviewerManager";
+import DraftToggleButton from "@/components/pulls/DraftToggleButton";
 import Markdown from "@/components/ui/Markdown";
+import ReactionBar from "@/components/ui/ReactionBar";
 
 type Params = { params: Promise<{ username: string; repo: string; number: string }> };
 
@@ -78,13 +80,17 @@ export default async function PullRequestDetailPage({ params }: Params) {
   // Cast through any to avoid stale Prisma client type issue when schema has path field
   const rawComments = await (db as any).comment.findMany({
     where: { pullRequestId: pr.id, path: null },
-    include: { author: { select: { username: true, name: true, avatarUrl: true } } },
+    include: {
+      author: { select: { username: true, name: true, avatarUrl: true } },
+      reactions: { include: { user: { select: { id: true } } } },
+    },
     orderBy: { createdAt: "asc" },
   }) as Array<{
     id: string;
     body: string;
     createdAt: Date;
     author: { username: string; name: string | null; avatarUrl: string | null };
+    reactions: Array<{ emoji: string; user: { id: string } }>;
   }>;
 
   // Fetch branch protection for the base branch
@@ -115,6 +121,16 @@ export default async function PullRequestDetailPage({ params }: Params) {
 
   const isOwner = session.username === username;
 
+  function aggregateReactions(reactions: Array<{ emoji: string; user: { id: string } }>, currentUserId: string | undefined): { emoji: string; count: number; hasReacted: boolean }[] {
+    const map: Record<string, { count: number; hasReacted: boolean }> = {};
+    reactions.forEach(r => {
+      if (!map[r.emoji]) map[r.emoji] = { count: 0, hasReacted: false };
+      map[r.emoji].count++;
+      if (currentUserId && r.user.id === currentUserId) map[r.emoji].hasReacted = true;
+    });
+    return Object.entries(map).map(([emoji, data]) => ({ emoji, ...data }));
+  }
+
   // Serialize reviewers for client component
   const reviewersSerialized = pr.reviewers.map((r) => ({
     id: r.id,
@@ -141,10 +157,18 @@ export default async function PullRequestDetailPage({ params }: Params) {
         <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8, lineHeight: 1.3 }}>
           {pr.title} <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>#{pr.number}</span>
         </h1>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: stateColor, background: stateColor + "22", border: `1px solid ${stateColor}44`, borderRadius: 20, padding: "3px 12px" }}>
             <StateIcon size={13} /> {pr.state}
           </span>
+          {pr.isDraft && (
+            <span style={{ display: "inline-flex", alignItems: "center", fontSize: 12, color: "var(--text-muted)", background: "var(--bg-secondary)", border: "1px solid var(--border)", borderRadius: 20, padding: "2px 10px" }}>
+              Draft
+            </span>
+          )}
+          {isOwner && pr.state === "open" && (
+            <DraftToggleButton isDraft={pr.isDraft} owner={username} repo={repoName} number={pr.number} />
+          )}
           <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
             <Link href={`/${pr.author.username}`} style={{ fontWeight: 600 }}>{pr.author.username}</Link>
             {" "}wants to merge <code style={{ fontSize: 12, background: "var(--bg-secondary)", padding: "1px 6px", borderRadius: 4 }}>{pr.headBranch}</code>
@@ -181,6 +205,11 @@ export default async function PullRequestDetailPage({ params }: Params) {
                 </div>
                 <div style={{ padding: 16 }}>
                   <Markdown content={comment.body} context={{ owner: username, repo: repoName }} />
+                  <ReactionBar
+                    commentId={comment.id}
+                    reactions={aggregateReactions(comment.reactions, session?.userId)}
+                    currentUserId={session?.userId}
+                  />
                 </div>
               </div>
             </div>

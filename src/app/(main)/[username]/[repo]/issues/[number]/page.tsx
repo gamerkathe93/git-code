@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { timeAgo } from "@/lib/utils";
 import IssueCommentForm from "@/components/issues/IssueCommentForm";
 import Markdown from "@/components/ui/Markdown";
+import ReactionBar from "@/components/ui/ReactionBar";
 
 type Params = { params: Promise<{ username: string; repo: string; number: string }> };
 
@@ -30,7 +31,7 @@ export default async function IssueDetailPage({ params }: Params) {
   });
   if (!repo) notFound();
 
-  const issue = await db.issue.findUnique({
+  const issue = await (db as any).issue.findUnique({
     where: { repoId_number: { repoId: repo.id, number: issueNumber } },
     include: {
       author: { select: { username: true, name: true, avatarUrl: true } },
@@ -38,7 +39,10 @@ export default async function IssueDetailPage({ params }: Params) {
       milestone: { select: { title: true, dueDate: true } },
       assignees: true,
       comments: {
-        include: { author: { select: { username: true, name: true, avatarUrl: true } } },
+        include: {
+          author: { select: { username: true, name: true, avatarUrl: true } },
+          reactions: { include: { user: { select: { id: true } } } },
+        },
         orderBy: { createdAt: "asc" },
       },
     },
@@ -47,6 +51,16 @@ export default async function IssueDetailPage({ params }: Params) {
 
   // isAuthor = issue author OR repo owner can close/reopen
   const isAuthor = session.username === issue.author.username || session.username === username;
+
+  function aggregateReactions(reactions: any[], currentUserId: string | undefined): { emoji: string; count: number; hasReacted: boolean }[] {
+    const map: Record<string, { count: number; hasReacted: boolean }> = {};
+    reactions.forEach(r => {
+      if (!map[r.emoji]) map[r.emoji] = { count: 0, hasReacted: false };
+      map[r.emoji].count++;
+      if (currentUserId && r.user.id === currentUserId) map[r.emoji].hasReacted = true;
+    });
+    return Object.entries(map).map(([emoji, data]) => ({ emoji, ...data }));
+  }
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto" }}>
@@ -113,6 +127,11 @@ export default async function IssueDetailPage({ params }: Params) {
                 </div>
                 <div style={{ padding: 16 }}>
                   <Markdown content={comment.body} context={{ owner: username, repo: repoName }} />
+                  <ReactionBar
+                    commentId={comment.id}
+                    reactions={aggregateReactions(comment.reactions, session?.userId)}
+                    currentUserId={session?.userId}
+                  />
                 </div>
               </div>
             </div>

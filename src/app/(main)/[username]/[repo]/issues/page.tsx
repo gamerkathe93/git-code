@@ -5,8 +5,12 @@ import { CircleDot, CheckCircle2, Plus } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { timeAgo } from "@/lib/utils";
+import FilterDropdown from "@/components/issues/FilterDropdown";
 
-type Params = { params: Promise<{ username: string; repo: string }>; searchParams: Promise<{ state?: string }> };
+type Params = {
+  params: Promise<{ username: string; repo: string }>;
+  searchParams: Promise<{ state?: string; label?: string; assignee?: string; milestone?: string; author?: string }>;
+};
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { username, repo } = await params;
@@ -18,15 +22,14 @@ export default async function IssuesPage({ params, searchParams }: Params) {
   if (!session) redirect("/login");
 
   const { username, repo: repoName } = await params;
-  const { state: stateParam } = await searchParams;
-  const activeState = stateParam === "closed" ? "closed" : "open";
+  const { state: stateParam, label, assignee, milestone, author } = await searchParams;
+  const showClosed = stateParam === "closed";
 
   const ownerUser = await db.user.findUnique({ where: { username } });
   if (!ownerUser) notFound();
 
   const repo = await db.repository.findUnique({
     where: { ownerId_name: { ownerId: ownerUser.id, name: repoName } },
-    include: { labels: true },
   });
   if (!repo) notFound();
 
@@ -35,71 +38,118 @@ export default async function IssuesPage({ params, searchParams }: Params) {
     return notFound();
   }
 
-  const [issues, openCount, closedCount] = await Promise.all([
+  const filterWhere: any = { repoId: repo.id, state: showClosed ? "closed" : "open" };
+
+  if (label) {
+    filterWhere.labels = { some: { label: { name: label } } };
+  }
+  if (assignee) {
+    filterWhere.assignees = { some: { assignee: { username: assignee } } };
+  }
+  if (milestone) {
+    filterWhere.milestone = { title: milestone };
+  }
+  if (author) {
+    filterWhere.author = { username: author };
+  }
+
+  const [issues, openCount, closedCount, labels, milestones] = await Promise.all([
     db.issue.findMany({
-      where: { repoId: repo.id, state: activeState },
+      where: filterWhere,
       orderBy: { createdAt: "desc" },
       include: {
         author: { select: { username: true, avatarUrl: true } },
         labels: { include: { label: true } },
+        assignees: { include: { assignee: { select: { username: true } } } },
         milestone: { select: { title: true } },
         _count: { select: { comments: true } },
       },
     }),
     db.issue.count({ where: { repoId: repo.id, state: "open" } }),
     db.issue.count({ where: { repoId: repo.id, state: "closed" } }),
+    db.label.findMany({ where: { repoId: repo.id }, orderBy: { name: "asc" } }),
+    db.milestone.findMany({ where: { repoId: repo.id, state: "open" }, orderBy: { title: "asc" } }),
   ]);
 
   return (
     <div>
-      {repo.labels.length > 0 && (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
-          {repo.labels.map((l: any) => (
-            <Link key={l.id} href={`/${username}/${repoName}/issues?label=${l.name}`} style={{
-              fontSize: 11, background: l.color + "22", color: l.color,
-              borderRadius: 20, padding: "2px 10px", border: `1px solid ${l.color}44`,
-              textDecoration: "none", fontWeight: 500,
-            }}>
-              {l.name}
-            </Link>
-          ))}
-        </div>
-      )}
-
       <div className="card" style={{ overflow: "hidden" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid var(--border)", background: "var(--bg-secondary)" }}>
           <div style={{ display: "flex", gap: 20 }}>
             <Link href={`/${username}/${repoName}/issues`} style={{
               display: "flex", alignItems: "center", gap: 6, fontSize: 13,
-              fontWeight: activeState === "open" ? 700 : 400,
-              color: activeState === "open" ? "var(--text)" : "var(--text-muted)",
+              fontWeight: !showClosed ? 700 : 400,
+              color: !showClosed ? "var(--text)" : "var(--text-muted)",
               textDecoration: "none",
             }}>
-              <CircleDot size={14} color={activeState === "open" ? "#22c55e" : "var(--text-muted)"} />
+              <CircleDot size={14} color={!showClosed ? "#22c55e" : "var(--text-muted)"} />
               {openCount} Open
             </Link>
             <Link href={`/${username}/${repoName}/issues?state=closed`} style={{
               display: "flex", alignItems: "center", gap: 6, fontSize: 13,
-              fontWeight: activeState === "closed" ? 700 : 400,
-              color: activeState === "closed" ? "var(--text)" : "var(--text-muted)",
+              fontWeight: showClosed ? 700 : 400,
+              color: showClosed ? "var(--text)" : "var(--text-muted)",
               textDecoration: "none",
             }}>
-              <CheckCircle2 size={14} color={activeState === "closed" ? "#a78bfa" : "var(--text-muted)"} />
+              <CheckCircle2 size={14} color={showClosed ? "#a78bfa" : "var(--text-muted)"} />
               {closedCount} Closed
             </Link>
           </div>
-          <Link href={`/${username}/${repoName}/issues/new`} className="btn btn-primary btn-sm">
-            <Plus size={13} /> New issue
-          </Link>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {/* Filter dropdowns — right side of header */}
+            <div style={{ display: "flex", gap: 8 }}>
+              {/* Label filter */}
+              <FilterDropdown
+                label="Label"
+                value={label}
+                options={labels.map((l: any) => ({ value: l.name, label: l.name, color: l.color }))}
+                paramName="label"
+                currentParams={{ state: stateParam, assignee, milestone, author }}
+                basePath={`/${username}/${repoName}/issues`}
+              />
+              {/* Milestone filter */}
+              <FilterDropdown
+                label="Milestone"
+                value={milestone}
+                options={milestones.map((m: any) => ({ value: m.title, label: m.title }))}
+                paramName="milestone"
+                currentParams={{ state: stateParam, label, assignee, author }}
+                basePath={`/${username}/${repoName}/issues`}
+              />
+              {/* Author filter badge */}
+              {author && (
+                <Link
+                  href={`/${username}/${repoName}/issues?state=${stateParam || "open"}`}
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    padding: "4px 8px",
+                    background: "rgba(255,255,255,0.06)",
+                    borderRadius: 6,
+                    textDecoration: "none",
+                  }}
+                >
+                  Author: {author} ✕
+                </Link>
+              )}
+            </div>
+            <Link href={`/${username}/${repoName}/issues/new`} className="btn btn-primary btn-sm">
+              <Plus size={13} /> New issue
+            </Link>
+          </div>
         </div>
 
         {issues.length === 0 ? (
           <div style={{ padding: 48, textAlign: "center", color: "var(--text-muted)" }}>
             <CircleDot size={32} style={{ marginBottom: 12, opacity: 0.3 }} />
             <p style={{ marginBottom: 12 }}>
-              {activeState === "open" ? "No open issues" : "No closed issues"}
+              {showClosed ? "No closed issues" : "No open issues"}
+              {(label || assignee || milestone || author) && " matching the selected filters"}
             </p>
-            {activeState === "open" && (
+            {!showClosed && !label && !assignee && !milestone && !author && (
               <Link href={`/${username}/${repoName}/issues/new`} className="btn btn-primary btn-sm">Open an issue</Link>
             )}
           </div>
@@ -110,9 +160,7 @@ export default async function IssuesPage({ params, searchParams }: Params) {
               borderBottom: i < issues.length - 1 ? "1px solid var(--border)" : "none",
               display: "flex", gap: 12,
               transition: "background 0.12s",
-            }}
-              onMouseEnter={undefined}
-            >
+            }}>
               {issue.state === "open"
                 ? <CircleDot size={16} color="#22c55e" style={{ marginTop: 2, flexShrink: 0 }} />
                 : <CheckCircle2 size={16} color="#a78bfa" style={{ marginTop: 2, flexShrink: 0 }} />
@@ -123,17 +171,17 @@ export default async function IssuesPage({ params, searchParams }: Params) {
                     {issue.title}
                   </Link>
                   {issue.labels.map((il: any) => (
-                    <span key={il.labelId} style={{
-                      fontSize: 11, background: il.label.color + "22", color: il.label.color,
-                      borderRadius: 20, padding: "1px 8px", border: `1px solid ${il.label.color}44`,
-                      whiteSpace: "nowrap", fontWeight: 500,
+                    <span key={il.label.id} style={{
+                      fontSize: 11, padding: "1px 6px", borderRadius: 10,
+                      background: `#${il.label.color}33`, color: `#${il.label.color}`,
+                      border: `1px solid #${il.label.color}44`,
                     }}>
                       {il.label.name}
                     </span>
                   ))}
                 </div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-                  #{issue.number} {activeState === "open" ? "opened" : "closed"} {timeAgo(issue.createdAt.toISOString())} by{" "}
+                  #{issue.number} {!showClosed ? "opened" : "closed"} {timeAgo(issue.createdAt.toISOString())} by{" "}
                   <Link href={`/${issue.author.username}`} style={{ fontWeight: 600 }}>{issue.author.username}</Link>
                   {issue.milestone && <> · <span style={{ color: "var(--accent-hover)" }}>{issue.milestone.title}</span></>}
                 </div>

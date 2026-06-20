@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
-import { GitBranch, GitPullRequestArrow, CircleDot, Code2, BookText, Package, Workflow, Settings2, Star, Eye, LockKeyhole, FolderGit2, Tag, Target, ArrowLeftRight, ShieldCheck } from "lucide-react";
+import { GitBranch, GitPullRequestArrow, CircleDot, Code2, BookText, Package, Workflow, Settings2, Star, Eye, LockKeyhole, FolderGit2, Tag, Target, ArrowLeftRight, ShieldCheck, BarChart2, Search } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { formatNumber } from "@/lib/utils";
@@ -59,11 +59,13 @@ export default async function RepoLayout({
 
   const tabs = [
     { href: `/${username}/${repoName}`, label: "Code", icon: <Code2 size={13} /> },
+    { href: `/${username}/${repoName}/search`, label: "Search", icon: <Search size={13} /> },
     { href: `/${username}/${repoName}/issues`, label: "Issues", icon: <CircleDot size={13} />, count: repo._count.issues },
     { href: `/${username}/${repoName}/labels`, label: "Labels", icon: <Tag size={13} /> },
     { href: `/${username}/${repoName}/milestones`, label: "Milestones", icon: <Target size={13} /> },
     { href: `/${username}/${repoName}/pulls`, label: "Pull Requests", icon: <GitPullRequestArrow size={13} />, count: repo._count.pullRequests },
     { href: `/${username}/${repoName}/pipelines`, label: "Pipelines", icon: <Workflow size={13} /> },
+    { href: `/${username}/${repoName}/insights`, label: "Insights", icon: <BarChart2 size={14} /> },
     { href: `/${username}/${repoName}/releases`, label: "Releases", icon: <Package size={13} /> },
     { href: `/${username}/${repoName}/tags`, label: "Tags", icon: <Tag size={13} /> },
     { href: `/${username}/${repoName}/compare`, label: "Compare", icon: <ArrowLeftRight size={13} /> },

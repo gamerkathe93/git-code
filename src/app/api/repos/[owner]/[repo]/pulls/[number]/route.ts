@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import path from "path";
+import { spawnSync } from "child_process";
+import fs from "fs";
 
 type Params = { params: Promise<{ owner: string; repo: string; number: string }> };
 
@@ -30,7 +33,13 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
 
   const body = await req.json();
-  const { action, title, body: prBody } = body;
+  const { action, title, body: prBody, strategy = "merge", isDraft } = body;
+
+  // Handle isDraft toggle separately
+  if (typeof isDraft === "boolean" && session.username === owner) {
+    await db.pullRequest.update({ where: { id: pr.id }, data: { isDraft } });
+    return NextResponse.json({ success: true });
+  }
 
   let newState = pr.state;
   let mergedAt = pr.mergedAt;
@@ -89,6 +98,44 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
     newState = "merged";
     mergedAt = new Date();
+
+    // Perform git merge in a temp working directory cloned from the bare repo
+    const GIT_REPO_PATH = process.env.GIT_REPO_PATH || path.join(process.cwd(), "repos");
+    const bareRepoPath = path.join(GIT_REPO_PATH, owner, `${repoName}.git`);
+    const tmpWorkDir = `/tmp/gitcode-merge-${pr.id}-${Date.now()}`;
+
+    function gitCmd(args: string[], cwd: string) {
+      return spawnSync("git", args, { cwd, encoding: "utf8" });
+    }
+
+    try {
+      gitCmd(["clone", bareRepoPath, tmpWorkDir], "/tmp");
+      gitCmd(["checkout", pr.baseBranch], tmpWorkDir);
+
+      if (strategy === "squash") {
+        gitCmd(["merge", "--squash", `origin/${pr.headBranch}`], tmpWorkDir);
+        gitCmd(
+          ["commit", "-m", `Squash merge PR #${pr.number}: ${pr.title}`, "--author", "GitCode <noreply@gitcode.dev>"],
+          tmpWorkDir
+        );
+      } else if (strategy === "rebase") {
+        gitCmd(["rebase", `origin/${pr.headBranch}`], tmpWorkDir);
+      } else {
+        // Standard merge commit
+        gitCmd(
+          ["merge", "--no-ff", `origin/${pr.headBranch}`, "-m", `Merge pull request #${pr.number}: ${pr.title}`],
+          tmpWorkDir
+        );
+      }
+
+      // Push merged result back to the bare repo
+      gitCmd(["push", "origin", pr.baseBranch], tmpWorkDir);
+    } catch (e) {
+      console.error("Git merge error:", e);
+      // Continue with DB update even if git operation fails
+    } finally {
+      try { fs.rmSync(tmpWorkDir, { recursive: true, force: true }); } catch {}
+    }
   }
 
   const updated = await db.pullRequest.update({
@@ -103,6 +150,38 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       author: { select: { username: true, avatarUrl: true } },
     },
   });
+
+  // Auto-close referenced issues
+  if (action === "merge") {
+    const refText = `${pr.title} ${pr.body}`;
+    const closePatterns = /(?:closes?|fixes?|resolves?)\s+#(\d+)/gi;
+    const matches = [...refText.matchAll(closePatterns)];
+
+    for (const match of matches) {
+      const issueNumber = parseInt(match[1]);
+      try {
+        const issue = await db.issue.findUnique({
+          where: { repoId_number: { repoId: repo.id, number: issueNumber } },
+        });
+        if (issue && issue.state === "open") {
+          await db.issue.update({
+            where: { id: issue.id },
+            data: { state: "closed", closedAt: new Date() },
+          });
+          // Add a comment on the issue saying it was auto-closed
+          await db.comment.create({
+            data: {
+              body: `Closed via pull request #${pr.number}: ${pr.title}`,
+              authorId: session.userId,
+              issueId: issue.id,
+            },
+          });
+        }
+      } catch (e) {
+        console.error("Auto-close issue error:", e);
+      }
+    }
+  }
 
   // Create notification for repo owner on close/merge (if they're not the actor)
   if ((action === "close" || action === "merge") && session.userId !== ownerUser.id) {

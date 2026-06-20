@@ -1,7 +1,25 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { GitMerge, XCircle, RotateCcw } from "lucide-react";
+import { GitMerge, XCircle, RotateCcw, ChevronDown, Check } from "lucide-react";
+
+const STRATEGIES = [
+  {
+    id: "merge",
+    label: "Create a merge commit",
+    desc: "All commits from the head branch will be added to the base branch via a merge commit.",
+  },
+  {
+    id: "squash",
+    label: "Squash and merge",
+    desc: "Combine all commits into one before merging.",
+  },
+  {
+    id: "rebase",
+    label: "Rebase and merge",
+    desc: "Rebase commits onto base branch individually.",
+  },
+];
 
 export default function PRActions({
   username, repo, number, state, isOwner, isAuthor,
@@ -13,8 +31,10 @@ export default function PRActions({
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [protectionError, setProtectionError] = useState<{ message: string; code?: string; required?: number; current?: number } | null>(null);
+  const [strategy, setStrategy] = useState("merge");
+  const [showStrategyMenu, setShowStrategyMenu] = useState(false);
 
-  async function act(action: string) {
+  async function act(action: string, mergeStrategy?: string) {
     setLoading(action);
     setError("");
     setProtectionError(null);
@@ -22,7 +42,7 @@ export default function PRActions({
       const res = await fetch(`/api/repos/${username}/${repo}/pulls/${number}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, ...(action === "merge" ? { strategy: mergeStrategy ?? strategy } : {}) }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -100,19 +120,77 @@ export default function PRActions({
           )}
         </div>
       )}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         {isOwner && (
-          <button
-            className="btn btn-success btn-sm"
-            onClick={() => act("merge")}
-            disabled={!!loading}
-            style={{ display: "flex", alignItems: "center", gap: 6 }}
-          >
-            {loading === "merge" ? (
-              <span style={{ width: 12, height: 12, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} />
-            ) : <GitMerge size={13} />}
-            Merge pull request
-          </button>
+          <div style={{ position: "relative" }}>
+            <div style={{ display: "flex", borderRadius: 6, overflow: "visible" }}>
+              <button
+                onClick={() => act("merge")}
+                disabled={!!loading}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  background: "#238636", color: "#fff", border: "none",
+                  padding: "6px 14px", fontSize: 13, fontWeight: 600,
+                  cursor: loading ? "not-allowed" : "pointer",
+                  opacity: loading ? 0.7 : 1,
+                  borderRadius: "6px 0 0 6px",
+                }}
+              >
+                {loading === "merge" ? (
+                  <span style={{ width: 12, height: 12, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} />
+                ) : <GitMerge size={13} />}
+                {STRATEGIES.find(s => s.id === strategy)?.label ?? "Create a merge commit"}
+              </button>
+              <button
+                onClick={() => setShowStrategyMenu(prev => !prev)}
+                disabled={!!loading}
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  background: "#238636", color: "#fff", border: "none",
+                  borderLeft: "1px solid rgba(255,255,255,0.2)",
+                  padding: "6px 10px", cursor: loading ? "not-allowed" : "pointer",
+                  opacity: loading ? 0.7 : 1,
+                  borderRadius: "0 6px 6px 0",
+                }}
+                aria-label="Select merge strategy"
+              >
+                <ChevronDown size={13} />
+              </button>
+            </div>
+
+            {showStrategyMenu && (
+              <div style={{
+                position: "absolute", bottom: "calc(100% + 4px)", left: 0,
+                background: "var(--bg-card)", border: "1px solid var(--border)",
+                borderRadius: 8, width: 310, zIndex: 50,
+                boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+                overflow: "hidden",
+              }}>
+                {STRATEGIES.map((s, idx) => (
+                  <button
+                    key={s.id}
+                    onClick={() => { setStrategy(s.id); setShowStrategyMenu(false); }}
+                    style={{
+                      display: "block", width: "100%", textAlign: "left",
+                      padding: "10px 14px", background: "none", border: "none",
+                      cursor: "pointer",
+                      borderBottom: idx < STRATEGIES.length - 1 ? "1px solid var(--border)" : "none",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                      <div style={{ width: 16, paddingTop: 2, flexShrink: 0 }}>
+                        {strategy === s.id && <Check size={14} color="#3fb950" />}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{s.label}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>{s.desc}</div>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
         {(isOwner || isAuthor) && (
           <button

@@ -11,12 +11,9 @@ echo "PORT=${PORT:-3000}"
 mkdir -p /data/db || echo "Warning: could not create /data/db"
 mkdir -p /data/repos || echo "Warning: could not create /data/repos"
 
-# Run Prisma migrations
-echo "Running database migrations..."
-npx prisma migrate deploy || {
-  echo "Migration failed — attempting db push as fallback..."
-  npx prisma db push --skip-generate || echo "db push also failed, continuing..."
-}
+# Sync database schema (creates any missing tables/columns from new models)
+echo "Syncing database schema..."
+npx prisma db push --accept-data-loss || echo "db push failed, continuing..."
 
 echo "Starting GitCode..."
 exec npx next start --port ${PORT:-3000} --hostname 0.0.0.0

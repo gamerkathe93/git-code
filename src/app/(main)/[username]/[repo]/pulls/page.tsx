@@ -5,8 +5,12 @@ import { GitPullRequestArrow, GitMerge, XCircle, Plus } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { timeAgo } from "@/lib/utils";
+import FilterDropdown from "@/components/issues/FilterDropdown";
 
-type Params = { params: Promise<{ username: string; repo: string }>; searchParams: Promise<{ state?: string }> };
+type Params = {
+  params: Promise<{ username: string; repo: string }>;
+  searchParams: Promise<{ state?: string; label?: string; author?: string }>;
+};
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { username, repo } = await params;
@@ -24,7 +28,7 @@ export default async function PullsPage({ params, searchParams }: Params) {
   if (!session) redirect("/login");
 
   const { username, repo: repoName } = await params;
-  const { state: stateParam } = await searchParams;
+  const { state: stateParam, label, author } = await searchParams;
   const showClosed = stateParam === "closed";
 
   const ownerUser = await db.user.findUnique({ where: { username } });
@@ -37,20 +41,31 @@ export default async function PullsPage({ params, searchParams }: Params) {
 
   if (repo.isPrivate && session.username !== username) return notFound();
 
-  const [pulls, openCount, closedCount] = await Promise.all([
+  const filterWhere: any = {
+    repoId: repo.id,
+    state: showClosed ? { in: ["closed", "merged"] } : "open",
+  };
+
+  if (label) {
+    filterWhere.labels = { some: { label: { name: label } } };
+  }
+  if (author) {
+    filterWhere.author = { username: author };
+  }
+
+  const [pulls, openCount, closedCount, labels] = await Promise.all([
     db.pullRequest.findMany({
-      where: {
-        repoId: repo.id,
-        state: showClosed ? { in: ["closed", "merged"] } : "open",
-      },
+      where: filterWhere,
       orderBy: { createdAt: "desc" },
       include: {
         author: { select: { username: true, avatarUrl: true } },
+        labels: { include: { label: true } },
         _count: { select: { comments: true } },
       },
     }),
     db.pullRequest.count({ where: { repoId: repo.id, state: "open" } }),
     db.pullRequest.count({ where: { repoId: repo.id, state: { in: ["closed", "merged"] } } }),
+    db.label.findMany({ where: { repoId: repo.id }, orderBy: { name: "asc" } }),
   ]);
 
   return (
@@ -77,15 +92,51 @@ export default async function PullsPage({ params, searchParams }: Params) {
               {closedCount} Closed
             </Link>
           </div>
-          <Link href={`/${username}/${repoName}/pulls/new`} className="btn btn-primary btn-sm">
-            <Plus size={13} /> New pull request
-          </Link>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {/* Filter dropdowns — right side of header */}
+            <div style={{ display: "flex", gap: 8 }}>
+              {/* Label filter */}
+              <FilterDropdown
+                label="Label"
+                value={label}
+                options={labels.map((l: any) => ({ value: l.name, label: l.name, color: l.color }))}
+                paramName="label"
+                currentParams={{ state: stateParam, author }}
+                basePath={`/${username}/${repoName}/pulls`}
+              />
+              {/* Author filter badge */}
+              {author && (
+                <Link
+                  href={`/${username}/${repoName}/pulls?state=${stateParam || "open"}`}
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    padding: "4px 8px",
+                    background: "rgba(255,255,255,0.06)",
+                    borderRadius: 6,
+                    textDecoration: "none",
+                  }}
+                >
+                  Author: {author} ✕
+                </Link>
+              )}
+            </div>
+            <Link href={`/${username}/${repoName}/pulls/new`} className="btn btn-primary btn-sm">
+              <Plus size={13} /> New pull request
+            </Link>
+          </div>
         </div>
 
         {pulls.length === 0 ? (
           <div style={{ padding: 48, textAlign: "center", color: "var(--text-muted)" }}>
             <GitPullRequestArrow size={32} style={{ marginBottom: 12, opacity: 0.3 }} />
-            <p>{showClosed ? "No closed pull requests" : "No open pull requests"}</p>
+            <p>
+              {showClosed ? "No closed pull requests" : "No open pull requests"}
+              {(label || author) && " matching the selected filters"}
+            </p>
           </div>
         ) : (
           pulls.map((pr: any, i: number) => (
@@ -106,6 +157,15 @@ export default async function PullsPage({ params, searchParams }: Params) {
                   {pr.state === "merged" && (
                     <span className="badge badge-merged">Merged</span>
                   )}
+                  {pr.labels.map((pl: any) => (
+                    <span key={pl.label.id} style={{
+                      fontSize: 11, padding: "1px 6px", borderRadius: 10,
+                      background: `#${pl.label.color}33`, color: `#${pl.label.color}`,
+                      border: `1px solid #${pl.label.color}44`,
+                    }}>
+                      {pl.label.name}
+                    </span>
+                  ))}
                 </div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                   #{pr.number} ·{" "}
