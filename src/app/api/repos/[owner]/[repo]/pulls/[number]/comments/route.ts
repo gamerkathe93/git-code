@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { sendCommentEmail, sendMentionEmail } from "@/lib/email";
 
 type Params = { params: Promise<{ owner: string; repo: string; number: string }> };
 
@@ -75,6 +76,54 @@ export async function POST(req: NextRequest, { params }: Params) {
   });
 
   await db.pullRequest.update({ where: { id: pr.id }, data: { updatedAt: new Date() } });
+
+  // Extract @mentions and notify each mentioned user
+  const mentionRegex = /\B@([a-zA-Z0-9_-]+)/g;
+  const mentionedUsernames = new Set<string>();
+  let match: RegExpExecArray | null;
+  while ((match = mentionRegex.exec(body)) !== null) {
+    mentionedUsernames.add(match[1]);
+  }
+
+  const prCommentUrl = `/${owner}/${repoName}/pulls/${prNumber}`;
+
+  const mentionNotifications = Array.from(mentionedUsernames).map(async (username) => {
+    const mentionedUser = await db.user.findUnique({ where: { username }, select: { id: true, email: true } });
+    if (mentionedUser && mentionedUser.id !== session.userId) {
+      await db.notification.create({
+        data: {
+          userId: mentionedUser.id,
+          type: "mention",
+          title: `${session.username} mentioned you in PR #${prNumber}`,
+          body: body.slice(0, 100),
+          url: prCommentUrl,
+        },
+      });
+      if (mentionedUser.email) {
+        sendMentionEmail(mentionedUser.email, session.username, "a PR comment", prCommentUrl).catch(() => {});
+      }
+    }
+  });
+
+  // Notify PR author of new comment (if not the commenter)
+  let prAuthorNotification: Promise<unknown> = Promise.resolve();
+  if (pr.authorId !== session.userId) {
+    const prAuthor = await db.user.findUnique({ where: { id: pr.authorId }, select: { email: true } });
+    prAuthorNotification = db.notification.create({
+      data: {
+        userId: pr.authorId,
+        type: "issue",
+        title: `New comment on PR #${prNumber}`,
+        body: body.slice(0, 100),
+        url: prCommentUrl,
+      },
+    });
+    if (prAuthor?.email) {
+      sendCommentEmail(prAuthor.email, session.username, `PR #${prNumber}`, prCommentUrl).catch(() => {});
+    }
+  }
+
+  await Promise.all([...mentionNotifications, prAuthorNotification]);
 
   return NextResponse.json({ comment }, { status: 201 });
 }

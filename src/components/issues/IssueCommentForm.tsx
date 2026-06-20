@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Markdown from "@/components/ui/Markdown";
 
 interface Props {
   username: string;
@@ -16,6 +17,7 @@ export default function IssueCommentForm({ username, repo, issueNumber, issueSta
   const [body, setBody] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [preview, setPreview] = useState(false);
 
   async function submitComment(close = false) {
     if (!body.trim() && !close) return;
@@ -39,6 +41,7 @@ export default function IssueCommentForm({ username, repo, issueNumber, issueSta
         if (!res.ok) { const d = await res.json(); setError(d.error || "Failed to update issue"); return; }
       }
       setBody("");
+      setPreview(false);
       router.refresh();
     } catch (e) {
       console.error(e);
@@ -53,13 +56,74 @@ export default function IssueCommentForm({ username, repo, issueNumber, issueSta
       {error && (
         <div style={{ color: "#f85149", fontSize: 12, marginBottom: 8, padding: "6px 10px", background: "rgba(248,81,73,0.1)", borderRadius: 4, border: "1px solid #f8514944" }}>{error}</div>
       )}
-      <textarea
-        value={body}
-        onChange={(e) => setBody(e.target.value)}
-        placeholder="Leave a comment"
-        rows={6}
-        style={{ width: "100%", resize: "vertical", fontFamily: "monospace", fontSize: 13, marginBottom: 12 }}
-      />
+
+      {/* Write / Preview tab toggle */}
+      <div style={{ display: "flex", gap: 0, marginBottom: 8, borderBottom: "1px solid var(--border)" }}>
+        <button
+          type="button"
+          onClick={() => setPreview(false)}
+          style={{
+            padding: "6px 14px",
+            fontSize: 13,
+            fontWeight: preview ? 400 : 600,
+            background: "none",
+            border: "none",
+            borderBottom: preview ? "2px solid transparent" : "2px solid var(--accent)",
+            color: preview ? "var(--text-muted)" : "var(--text)",
+            cursor: "pointer",
+            marginBottom: -1,
+            transition: "color 0.15s, border-color 0.15s",
+          }}
+        >
+          Write
+        </button>
+        <button
+          type="button"
+          onClick={() => setPreview(true)}
+          style={{
+            padding: "6px 14px",
+            fontSize: 13,
+            fontWeight: preview ? 600 : 400,
+            background: "none",
+            border: "none",
+            borderBottom: preview ? "2px solid var(--accent)" : "2px solid transparent",
+            color: preview ? "var(--text)" : "var(--text-muted)",
+            cursor: "pointer",
+            marginBottom: -1,
+            transition: "color 0.15s, border-color 0.15s",
+          }}
+        >
+          Preview
+        </button>
+      </div>
+
+      {preview ? (
+        <div
+          style={{
+            minHeight: 120,
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            padding: 12,
+            marginBottom: 12,
+            background: "var(--bg-secondary)",
+          }}
+        >
+          {body.trim() ? (
+            <Markdown content={body} />
+          ) : (
+            <span style={{ color: "var(--text-subtle)", fontSize: 13, fontStyle: "italic" }}>Nothing to preview.</span>
+          )}
+        </div>
+      ) : (
+        <textarea
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          placeholder="Leave a comment (Markdown supported)"
+          rows={6}
+          style={{ width: "100%", resize: "vertical", fontFamily: "monospace", fontSize: 13, marginBottom: 12 }}
+        />
+      )}
+
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
         {isAuthor && (
           <button

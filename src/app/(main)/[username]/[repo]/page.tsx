@@ -6,6 +6,7 @@ import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getTree, getCommits, getFileContent, hasAnyCommit, getCloneUrls } from "@/lib/git";
 import { timeAgo, getLanguageColor } from "@/lib/utils";
+import Markdown from "@/components/ui/Markdown";
 
 type Params = { params: Promise<{ username: string; repo: string }> };
 
@@ -113,9 +114,7 @@ export default async function RepoCodePage({ params }: Params) {
                     <FileCode2 size={16} />
                     <span style={{ fontWeight: 600, fontSize: 14 }}>README.md</span>
                   </div>
-                  <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 14, lineHeight: 1.6, color: "var(--text-muted)" }}>
-                    {readme.slice(0, 5000)}{readme.length > 5000 ? "\n\n[truncated…]" : ""}
-                  </pre>
+                  <Markdown content={readme.length > 5000 ? readme.slice(0, 5000) + "\n\n[truncated…]" : readme} />
                 </div>
               )}
             </>

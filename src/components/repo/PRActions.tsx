@@ -12,10 +12,12 @@ export default function PRActions({
   const router = useRouter();
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [protectionError, setProtectionError] = useState<{ message: string; code?: string; required?: number; current?: number } | null>(null);
 
   async function act(action: string) {
     setLoading(action);
     setError("");
+    setProtectionError(null);
     try {
       const res = await fetch(`/api/repos/${username}/${repo}/pulls/${number}`, {
         method: "PATCH",
@@ -23,7 +25,14 @@ export default function PRActions({
         body: JSON.stringify({ action }),
       });
       const data = await res.json();
-      if (!res.ok) { setError(data.error ?? "Action failed"); return; }
+      if (!res.ok) {
+        if (res.status === 422 && data.code) {
+          setProtectionError({ message: data.error, code: data.code, required: data.required, current: data.current });
+        } else {
+          setError(data.error ?? "Action failed");
+        }
+        return;
+      }
       router.refresh();
     } catch {
       setError("Network error");
@@ -76,6 +85,21 @@ export default function PRActions({
       <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 14 }}>
         Review the changes, then merge or close this pull request.
       </p>
+      {protectionError && (
+        <div style={{ background: "rgba(217,119,6,0.1)", border: "1px solid rgba(217,119,6,0.4)", borderRadius: 6, padding: "10px 14px", marginBottom: 14 }}>
+          {protectionError.code === "PROTECTION_REQUIRED_APPROVALS" ? (
+            <p style={{ fontSize: 13, color: "#d97706", margin: 0 }}>
+              ⚠ Requires {protectionError.required} approval(s) — {protectionError.current} given. Request a review to merge.
+            </p>
+          ) : protectionError.code === "PROTECTION_STATUS_CHECKS" ? (
+            <p style={{ fontSize: 13, color: "#d97706", margin: 0 }}>
+              ⚠ Required status checks haven&apos;t passed. Pipeline must succeed before merging.
+            </p>
+          ) : (
+            <p style={{ fontSize: 13, color: "#d97706", margin: 0 }}>⚠ {protectionError.message}</p>
+          )}
+        </div>
+      )}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {isOwner && (
           <button

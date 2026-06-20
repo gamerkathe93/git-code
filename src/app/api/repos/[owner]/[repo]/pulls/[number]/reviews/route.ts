@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { sendReviewEmail } from "@/lib/email";
 
 type Params = { params: Promise<{ owner: string; repo: string; number: string }> };
 
@@ -44,6 +45,15 @@ export async function POST(req: NextRequest, { params }: Params) {
       reviewer: { select: { id: true, username: true, name: true, avatarUrl: true } },
     },
   });
+
+  // Email the PR author about the review (fire-and-forget)
+  if (pr.authorId !== session.userId) {
+    const prAuthor = await db.user.findUnique({ where: { id: pr.authorId }, select: { email: true } });
+    if (prAuthor?.email) {
+      const prUrl = `/${owner}/${repoName}/pulls/${number}`;
+      sendReviewEmail(prAuthor.email, session.username, state, pr.title, prUrl).catch(() => {});
+    }
+  }
 
   return NextResponse.json({ review: updated });
 }

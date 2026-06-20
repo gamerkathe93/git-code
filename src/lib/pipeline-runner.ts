@@ -234,6 +234,22 @@ export async function runPipeline(pipelineId: string, username: string, repoName
         updatedAt: new Date(),
       },
     });
+
+    // Email the repo owner about the pipeline result (fire-and-forget)
+    const repoWithOwner = await db.repository.findUnique({
+      where: { id: pipeline.repoId },
+      include: { owner: { select: { email: true, username: true } } },
+    });
+    if (repoWithOwner?.owner.email) {
+      const { sendPipelineEmail } = await import("./email");
+      sendPipelineEmail(
+        repoWithOwner.owner.email,
+        pipelineSuccess ? "success" : "failed",
+        `${repoWithOwner.owner.username}/${repoWithOwner.name}`,
+        pipeline.branch ?? "unknown",
+        `/${repoWithOwner.owner.username}/${repoWithOwner.name}/pipelines/${pipelineId}`
+      ).catch(() => {});
+    }
   } catch (err) {
     console.error("Pipeline runner error:", err);
     await db.pipeline.update({

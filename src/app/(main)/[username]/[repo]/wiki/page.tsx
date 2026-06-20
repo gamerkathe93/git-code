@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { BookText, Plus, Edit, Clock, FileText } from "lucide-react";
+import Markdown from "@/components/ui/Markdown";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
@@ -61,9 +62,11 @@ export default async function WikiPage({ params, searchParams }: Params) {
         {activePage ? (
           <>
             <div className="card" style={{ padding: "24px 32px" }}>
-              <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "inherit", fontSize: 14, lineHeight: 1.8, color: "var(--text)", margin: 0 }}>
-                {activePage.content || "(This page has no content yet.)"}
-              </pre>
+              {activePage.content ? (
+                <Markdown content={activePage.content} />
+              ) : (
+                <p style={{ color: "var(--text-muted)", fontStyle: "italic", fontSize: 13 }}>(This page has no content yet.)</p>
+              )}
             </div>
             <div style={{ marginTop: 16, color: "var(--text-muted)", fontSize: 13, display: "flex", gap: 12 }}>
               <span>

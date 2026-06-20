@@ -44,6 +44,49 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (session.username !== owner) {
       return NextResponse.json({ error: "Only repo owner can merge" }, { status: 403 });
     }
+
+    // Check branch protection
+    const protection = await (db as any).branchProtection.findFirst({
+      where: {
+        repoId: repo.id,
+        OR: [
+          { pattern: pr.baseBranch },
+          { pattern: "*" },
+        ]
+      }
+    });
+
+    if (protection) {
+      if (protection.requirePullRequest && protection.requiredApprovals > 0) {
+        // Count approved reviews
+        const approvals = await (db as any).pRReviewer.count({
+          where: { pullRequestId: pr.id, state: "approved" }
+        });
+        if (approvals < protection.requiredApprovals) {
+          return NextResponse.json({
+            error: `Branch protection requires ${protection.requiredApprovals} approval(s). This PR has ${approvals}.`,
+            code: "PROTECTION_REQUIRED_APPROVALS",
+            required: protection.requiredApprovals,
+            current: approvals,
+          }, { status: 422 });
+        }
+      }
+
+      if (protection.requireStatusChecks) {
+        // Check latest pipeline for this PR's head branch
+        const pipeline = await db.pipeline.findFirst({
+          where: { repoId: repo.id, branch: pr.headBranch },
+          orderBy: { createdAt: "desc" },
+        });
+        if (!pipeline || pipeline.status !== "success") {
+          return NextResponse.json({
+            error: "Branch protection requires passing status checks. No successful pipeline found for this branch.",
+            code: "PROTECTION_STATUS_CHECKS",
+          }, { status: 422 });
+        }
+      }
+    }
+
     newState = "merged";
     mergedAt = new Date();
   }

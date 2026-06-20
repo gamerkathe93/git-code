@@ -7,9 +7,10 @@ type Params = { params: Promise<{ owner: string; repo: string }> };
 async function getRepo(owner: string, repoName: string) {
   const ownerUser = await db.user.findUnique({ where: { username: owner } });
   if (!ownerUser) return null;
-  return db.repository.findUnique({
+  const repo = await db.repository.findUnique({
     where: { ownerId_name: { ownerId: ownerUser.id, name: repoName } },
   });
+  return repo ? { ownerUser, repo } : null;
 }
 
 export async function GET(req: NextRequest, { params }: Params) {
@@ -17,8 +18,9 @@ export async function GET(req: NextRequest, { params }: Params) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { owner, repo: repoName } = await params;
-  const repo = await getRepo(owner, repoName);
-  if (!repo) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const resolved = await getRepo(owner, repoName);
+  if (!resolved) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const { repo } = resolved;
 
   const { searchParams } = new URL(req.url);
   const state = searchParams.get("state") || "open";
@@ -53,8 +55,10 @@ export async function GET(req: NextRequest, { params }: Params) {
   ]);
 
   return NextResponse.json({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     issues: issues.map((i: any) => ({
       ...i,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       labels: i.labels.map((il: any) => il.label),
       commentsCount: i._count.comments,
     })),
@@ -69,18 +73,24 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { owner, repo: repoName } = await params;
-  const repo = await getRepo(owner, repoName);
-  if (!repo) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const resolved = await getRepo(owner, repoName);
+  if (!resolved) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const { ownerUser, repo } = resolved;
 
   const body = await req.json();
   const { title, body: issueBody = "", labelIds = [], milestoneId } = body;
   if (!title) return NextResponse.json({ error: "Title is required" }, { status: 400 });
 
-  const maxNum = await db.issue.findFirst({ where: { repoId: repo.id }, orderBy: { number: "desc" }, select: { number: true } });
+  const maxNum = await db.issue.findFirst({
+    where: { repoId: repo.id },
+    orderBy: { number: "desc" },
+    select: { number: true },
+  });
+  const nextNumber = (maxNum?.number ?? 0) + 1;
 
   const issue = await db.issue.create({
     data: {
-      number: (maxNum?.number ?? 0) + 1,
+      number: nextNumber,
       title,
       body: issueBody,
       repoId: repo.id,
@@ -95,6 +105,19 @@ export async function POST(req: NextRequest, { params }: Params) {
       labels: { include: { label: true } },
     },
   });
+
+  // Notify repo owner if the issue author is not the owner
+  if (ownerUser.id !== session.userId) {
+    await db.notification.create({
+      data: {
+        userId: ownerUser.id,
+        type: "issue",
+        title: `New issue: ${title}`,
+        body: `${session.username} opened issue #${nextNumber} in ${repoName}`,
+        url: `/${owner}/${repoName}/issues/${nextNumber}`,
+      },
+    });
+  }
 
   return NextResponse.json({ issue }, { status: 201 });
 }

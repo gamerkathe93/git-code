@@ -1,16 +1,25 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { AlertCircle, Eye, EyeOff } from "lucide-react";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { AlertCircle, Eye, EyeOff, CheckCircle } from "lucide-react";
 
-export default function LoginForm() {
+function LoginFormInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [login, setLogin]       = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw]     = useState(false);
   const [error, setError]       = useState("");
   const [loading, setLoading]   = useState(false);
+  const [verified, setVerified] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get("verified") === "1") {
+      setVerified(true);
+    }
+  }, [searchParams]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -35,6 +44,19 @@ export default function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {verified && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8,
+          background: "rgba(34,197,94,0.08)",
+          border: "1px solid rgba(34,197,94,0.25)",
+          borderRadius: 8, padding: "10px 14px",
+          color: "#4ade80", fontSize: 13,
+          animation: "fadeIn 0.2s ease both",
+        }}>
+          <CheckCircle size={14} style={{ flexShrink: 0 }} />
+          Email verified! You can now sign in.
+        </div>
+      )}
       {error && (
         <div style={{
           display: "flex", alignItems: "center", gap: 8,
@@ -71,6 +93,9 @@ export default function LoginForm() {
           <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", letterSpacing: "0.02em" }}>
             PASSWORD
           </label>
+          <Link href="/forgot-password" style={{ fontSize: 12, color: "var(--accent-hover)", textDecoration: "none" }}>
+            Forgot password?
+          </Link>
         </div>
         <div style={{ position: "relative" }}>
           <input
@@ -125,5 +150,13 @@ export default function LoginForm() {
         ) : "Sign in"}
       </button>
     </form>
+  );
+}
+
+export default function LoginForm() {
+  return (
+    <Suspense fallback={null}>
+      <LoginFormInner />
+    </Suspense>
   );
 }

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
-import { GitBranch, GitPullRequestArrow, CircleDot, Code2, BookText, Package, Workflow, Settings2, Star, Eye, LockKeyhole, FolderGit2, Tag, Target, ArrowLeftRight } from "lucide-react";
+import { GitBranch, GitPullRequestArrow, CircleDot, Code2, BookText, Package, Workflow, Settings2, Star, Eye, LockKeyhole, FolderGit2, Tag, Target, ArrowLeftRight, ShieldCheck } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { formatNumber } from "@/lib/utils";
@@ -49,6 +49,10 @@ export default async function RepoLayout({
     orderBy: { createdAt: "desc" },
   });
 
+  const defaultProtection = await (db as any).branchProtection.findFirst({
+    where: { repoId: repo.id, OR: [{ pattern: repo.defaultBranch }, { pattern: "*" }] }
+  });
+
   const pipelineColor: Record<string, string> = {
     success: "#3fb950", failed: "#f85149", running: "#58a6ff", pending: "#d29922", canceled: "#7d8590"
   };
@@ -89,6 +93,11 @@ export default async function RepoLayout({
             {lastPipeline && (
               <span style={{ fontSize: 11, color: pipelineColor[lastPipeline.status] || "#7d8590", border: `1px solid ${pipelineColor[lastPipeline.status] || "#7d8590"}44`, borderRadius: 20, padding: "1px 8px" }}>
                 ● {lastPipeline.status}
+              </span>
+            )}
+            {defaultProtection && (
+              <span style={{ fontSize: 11, color: "#58a6ff", border: "1px solid #58a6ff44", borderRadius: 20, padding: "1px 8px", display: "inline-flex", alignItems: "center", gap: 3 }}>
+                <ShieldCheck size={10} /> Protected
               </span>
             )}
           </div>

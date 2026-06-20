@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { db } from "@/lib/db";
 import { createToken, setSessionCookie } from "@/lib/auth";
+import { sendEmail, emailTemplate } from "@/lib/email";
 
 export async function POST(req: NextRequest) {
   try {
@@ -32,15 +34,35 @@ export async function POST(req: NextRequest) {
 
     const passwordHash = await bcrypt.hash(password, 12);
 
-    const user = await db.user.create({
+    // Generate email verification token
+    const verifyToken = crypto.randomBytes(32).toString("hex");
+    const verifyTokenHash = crypto.createHash("sha256").update(verifyToken).digest("hex");
+    const verifyExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    const user = await (db as any).user.create({
       data: {
         name,
         username,
         email,
         passwordHash,
         avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`,
+        passwordResetToken: verifyTokenHash,
+        passwordResetExpiry: verifyExpiry,
       },
     });
+
+    // Send verification email (non-blocking)
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    sendEmail({
+      to: email,
+      subject: "Verify your GitCode email",
+      html: emailTemplate(
+        "Verify your email",
+        "<p>Welcome to GitCode! Click below to verify your email address.</p><p>This link expires in 24 hours.</p>",
+        "Verify email",
+        `${appUrl}/api/auth/verify-email?token=${verifyToken}`
+      ),
+    }).catch(() => {});
 
     const token = await createToken({
       userId: user.id,

@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
-import { GitPullRequest, GitMerge, XCircle, Tag } from "lucide-react";
+import { GitPullRequest, GitMerge, XCircle, Tag, CheckCircle } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { timeAgo } from "@/lib/utils";
 import PRActions from "@/components/repo/PRActions";
 import PRTabNav from "@/components/repo/PRTabNav";
 import ReviewerManager from "@/components/pulls/ReviewerManager";
+import Markdown from "@/components/ui/Markdown";
 
 type Params = { params: Promise<{ username: string; repo: string; number: string }> };
 
@@ -86,6 +87,29 @@ export default async function PullRequestDetailPage({ params }: Params) {
     author: { username: string; name: string | null; avatarUrl: string | null };
   }>;
 
+  // Fetch branch protection for the base branch
+  const protection = await (db as any).branchProtection.findFirst({
+    where: { repoId: repo.id, OR: [{ pattern: pr.baseBranch }, { pattern: "*" }] }
+  }) as {
+    id: string; repoId: string; pattern: string;
+    requirePullRequest: boolean; requiredApprovals: number;
+    requireStatusChecks: boolean; allowForcePush: boolean;
+  } | null;
+
+  let approvalCount = 0;
+  let headPipeline: { status: string } | null = null;
+  if (protection) {
+    approvalCount = await (db as any).pRReviewer.count({
+      where: { pullRequestId: pr.id, state: "approved" }
+    });
+    if (protection.requireStatusChecks) {
+      headPipeline = await db.pipeline.findFirst({
+        where: { repoId: repo.id, branch: pr.headBranch },
+        orderBy: { createdAt: "desc" },
+      });
+    }
+  }
+
   const stateColor = pr.state === "merged" ? "#a371f7" : pr.state === "closed" ? "#f85149" : "#3fb950";
   const StateIcon = pr.state === "merged" ? GitMerge : pr.state === "closed" ? XCircle : GitPullRequest;
 
@@ -138,7 +162,7 @@ export default async function PullRequestDetailPage({ params }: Params) {
           {/* Description */}
           {pr.body && (
             <div className="card" style={{ padding: 20, marginBottom: 16 }}>
-              <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 14, lineHeight: 1.6 }}>{pr.body}</pre>
+              <Markdown content={pr.body} context={{ owner: username, repo: repoName }} />
             </div>
           )}
 
@@ -156,11 +180,42 @@ export default async function PullRequestDetailPage({ params }: Params) {
                   <span style={{ color: "var(--text-muted)", fontSize: 12 }}> commented {timeAgo(comment.createdAt.toISOString())}</span>
                 </div>
                 <div style={{ padding: 16 }}>
-                  <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 14 }}>{comment.body}</pre>
+                  <Markdown content={comment.body} context={{ owner: username, repo: repoName }} />
                 </div>
               </div>
             </div>
           ))}
+
+          {/* Merge checks */}
+          {protection && pr.state === "open" && (
+            <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+              <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Merge checks</h3>
+
+              {protection.requirePullRequest && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  {approvalCount >= protection.requiredApprovals
+                    ? <CheckCircle size={16} color="#3fb950" />
+                    : <XCircle size={16} color="#f85149" />}
+                  <span style={{ fontSize: 13 }}>
+                    {approvalCount}/{protection.requiredApprovals} required approval(s)
+                  </span>
+                </div>
+              )}
+
+              {protection.requireStatusChecks && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {headPipeline?.status === "success"
+                    ? <CheckCircle size={16} color="#3fb950" />
+                    : <XCircle size={16} color="#f85149" />}
+                  <span style={{ fontSize: 13 }}>
+                    {headPipeline
+                      ? `CI pipeline: ${headPipeline.status}`
+                      : "No pipeline found for head branch"}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* PR actions */}
           <PRActions

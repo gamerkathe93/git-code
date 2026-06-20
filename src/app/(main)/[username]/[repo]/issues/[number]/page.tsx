@@ -6,6 +6,7 @@ import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { timeAgo } from "@/lib/utils";
 import IssueCommentForm from "@/components/issues/IssueCommentForm";
+import Markdown from "@/components/ui/Markdown";
 
 type Params = { params: Promise<{ username: string; repo: string; number: string }> };
 
@@ -87,7 +88,7 @@ export default async function IssueDetailPage({ params }: Params) {
               </div>
               <div style={{ padding: 16 }}>
                 {issue.body ? (
-                  <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 14, lineHeight: 1.6 }}>{issue.body}</pre>
+                  <Markdown content={issue.body} context={{ owner: username, repo: repoName }} />
                 ) : (
                   <p style={{ color: "var(--text-muted)", fontStyle: "italic", fontSize: 13 }}>No description provided.</p>
                 )}
@@ -111,7 +112,7 @@ export default async function IssueDetailPage({ params }: Params) {
                   </span>
                 </div>
                 <div style={{ padding: 16 }}>
-                  <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 14, lineHeight: 1.6 }}>{comment.body}</pre>
+                  <Markdown content={comment.body} context={{ owner: username, repo: repoName }} />
                 </div>
               </div>
             </div>
